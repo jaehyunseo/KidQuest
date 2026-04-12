@@ -3,57 +3,117 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {userId} (Firebase Auth UID)
+    // Fields:
+    //   - uid: string (required) - Firebase Auth UID
+    //   - name: string (required) - User's display name
+    //   - email: string (required) - User's email address
+    //   - role: string (required, enum: ['parent', 'child']) - Role of the user
+    //   - familyId: string (optional) - ID of the family this user belongs to
+    //
+    // Collection: families
+    // Document ID: {familyId}
+    // Fields:
+    //   - name: string (required)
+    //   - inviteCode: string (required)
+    //   - createdAt: string (required, ISO 8601)
+    //   - members: map (required) - Map of {uid: role}
+    //
+    // Collection: families/{familyId}/children
+    // Document ID: {childId}
+    // Fields:
+    //   - name: string (required)
+    //   - avatar: string (required)
+    //   - totalPoints: number (required)
+    //   - level: number (required)
+    //   - inventory: list (required)
+    //
+    // Subcollections: quests, history
+    //
+    // ===============================================================
+
+    // ===============================================================
     // Helper Functions
     // ===============================================================
+    
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function getFamilyData(familyId) {
-      return get(/databases/$(database)/documents/families/$(familyId)).data;
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "seo574486@gmail.com" && request.auth.token.email_verified == true));
     }
-    
+
+    function getUserData() {
+      let path = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(path) ? get(path).data : null;
+    }
+
     function isFamilyMember(familyId) {
       let userData = getUserData();
-      return isAuthenticated() && userData.familyId == familyId;
+      return isAuthenticated() && (
+        (userData != null && userData.familyId == familyId) ||
+        (exists(/databases/$(database)/documents/families/$(familyId)) && 
+         request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.members)
+      );
     }
 
     function isParentOfFamily(familyId) {
       let userData = getUserData();
-      return isFamilyMember(familyId) && userData.role == 'parent';
+      return isAuthenticated() && userData != null && userData.familyId == familyId && userData.role == 'parent';
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'name', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             data.role in ['parent', 'child'] &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.email is string && data.email.size() > 0;
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
-    
+
     match /users/{userId} {
-      allow read, write: if request.auth.uid == userId;
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data)) || isAdmin();
     }
-    
+
     match /families/{familyId} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated(); // Broad read for joining
       allow create: if isAuthenticated();
-      allow update: if isParentOfFamily(familyId) || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']));
+      allow update: if isParentOfFamily(familyId) || isAdmin() || 
+                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']));
 
       match /children/{childId} {
-        allow read: if isFamilyMember(familyId);
-        allow write: if isFamilyMember(familyId); // Both parents and children can update points/inventory
+        allow read: if isFamilyMember(familyId) || isAdmin();
+        allow write: if isFamilyMember(familyId) || isAdmin();
 
-        match /quests/{questId} {
-          allow read: if isFamilyMember(familyId);
-          allow write: if isFamilyMember(familyId);
-        }
-
-        match /history/{historyId} {
-          allow read: if isFamilyMember(familyId);
-          allow write: if isFamilyMember(familyId);
+        match /{allSubcollections=**} {
+          allow read, write: if isFamilyMember(familyId) || isAdmin();
         }
       }
+    }
+    
+    // Default deny
+    match /{allPaths=**} {
+      allow read, write: if false;
     }
   }
 }

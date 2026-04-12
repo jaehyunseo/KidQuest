@@ -37,9 +37,60 @@ import confetti from 'canvas-confetti';
 import { GoogleGenAI } from "@google/genai";
 import { auth, db, googleProvider } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc, getDocFromServer } from 'firebase/firestore';
 import { Quest, QuestCategory, UserProfile, Reward, HistoryRecord, CATEGORY_COLORS, CATEGORY_LABELS, UserAccount, Family, ChildProfile } from './types';
 import { cn, getLevel, getProgressToNextLevel } from './lib/utils';
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 
 // Sound effects URLs
 const SOUNDS = {
@@ -119,6 +170,15 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
+        // Test connection to Firestore
+        try {
+          await getDocFromServer(doc(db, 'test', 'connection'));
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('the client is offline')) {
+            console.error("Please check your Firebase configuration. The client is offline.");
+          }
+        }
+
         const userRef = doc(db, 'users', u.uid);
         onSnapshot(userRef, (snap) => {
           if (snap.exists()) {
@@ -130,12 +190,13 @@ export default function App() {
               name: u.displayName || '사용자',
               role: 'parent' // Default to parent for first login
             };
-            setDoc(userRef, newAccount).catch(err => console.error("Error creating user doc:", err));
+            setDoc(userRef, newAccount).catch(err => {
+              handleFirestoreError(err, OperationType.WRITE, `users/${u.uid}`);
+            });
             setUserAccount(newAccount);
           }
         }, (error) => {
-          console.error("Error fetching user data:", error);
-          showAlert('데이터 오류', `사용자 정보를 불러오는 중 오류가 발생했습니다: ${error.message}`);
+          handleFirestoreError(error, OperationType.GET, `users/${u.uid}`);
         });
       } else {
         setUserAccount(null);
@@ -152,20 +213,25 @@ export default function App() {
   useEffect(() => {
     if (!userAccount?.familyId) return;
 
-    const familyRef = doc(db, 'families', userAccount.familyId);
+    const familyId = userAccount.familyId;
+    const familyRef = doc(db, 'families', familyId);
     const unsubFamily = onSnapshot(familyRef, (snap) => {
       if (snap.exists()) {
         setFamily({ id: snap.id, ...snap.data() } as Family);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `families/${familyId}`);
     });
 
-    const childrenRef = collection(db, 'families', userAccount.familyId, 'children');
+    const childrenRef = collection(db, 'families', familyId, 'children');
     const unsubChildren = onSnapshot(childrenRef, (snap) => {
       const childList = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChildProfile));
       setChildren(childList);
       if (childList.length > 0 && !selectedChildId) {
         setSelectedChildId(childList[0].id);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children`);
     });
 
     return () => {
@@ -186,6 +252,8 @@ export default function App() {
       if (docSnap.exists()) {
         setProfile(docSnap.data() as UserProfile);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children/${childId}`);
     });
 
     const questsRef = collection(db, 'families', familyId, 'children', childId, 'quests');
@@ -196,15 +264,23 @@ export default function App() {
           const newDocRef = doc(questsRef);
           batch.set(newDocRef, { ...q, id: newDocRef.id });
         });
-        await batch.commit();
+        try {
+          await batch.commit();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `families/${familyId}/children/${childId}/quests`);
+        }
       } else {
         setQuests(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Quest)));
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children/${childId}/quests`);
     });
 
     const historyRef = collection(db, 'families', familyId, 'children', childId, 'history');
     const unsubHistory = onSnapshot(historyRef, (snapshot) => {
       setHistory(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as HistoryRecord)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children/${childId}/history`);
     });
 
     return () => {
@@ -219,7 +295,10 @@ export default function App() {
     if (!profile || !userAccount?.familyId || !selectedChildId) return;
     const newLevel = getLevel(profile.totalPoints);
     if (newLevel !== profile.level) {
-      updateDoc(doc(db, 'families', userAccount.familyId, 'children', selectedChildId), { level: newLevel });
+      const childRef = doc(db, 'families', userAccount.familyId, 'children', selectedChildId);
+      updateDoc(childRef, { level: newLevel }).catch(err => {
+        handleFirestoreError(err, OperationType.UPDATE, childRef.path);
+      });
       confetti({
         particleCount: 150,
         spread: 70,
@@ -284,7 +363,11 @@ export default function App() {
         timestamp: new Date().toISOString()
       });
 
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `families/${familyId}/children/${childId}`);
+      }
 
       confetti({
         particleCount: 100,
@@ -316,18 +399,26 @@ export default function App() {
         batch.delete(doc(db, 'families', familyId, 'children', childId, 'history', recordToDelete.id));
       }
 
-      await batch.commit();
+      try {
+        await batch.commit();
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, `families/${familyId}/children/${childId}`);
+      }
     }
   };
 
   const addQuest = async (title: string, points: number, category: QuestCategory) => {
     if (!userAccount?.familyId || !selectedChildId) return;
-    await addDoc(collection(db, 'families', userAccount.familyId, 'children', selectedChildId, 'quests'), {
-      title,
-      points,
-      category,
-      completed: false
-    });
+    try {
+      await addDoc(collection(db, 'families', userAccount.familyId, 'children', selectedChildId, 'quests'), {
+        title,
+        points,
+        category,
+        completed: false
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `families/${userAccount.familyId}/children/${selectedChildId}/quests`);
+    }
   };
 
   const deleteQuest = (id: string) => {
@@ -335,7 +426,11 @@ export default function App() {
     const quest = quests.find(q => q.id === id);
     if (!quest) return;
     showConfirm('퀘스트 삭제', `정말 '${quest.title}' 퀘스트를 삭제할까요?\n삭제하면 복구할 수 없습니다.`, async () => {
-      await deleteDoc(doc(db, 'families', userAccount.familyId!, 'children', selectedChildId!, 'quests', id));
+      try {
+        await deleteDoc(doc(db, 'families', userAccount.familyId!, 'children', selectedChildId!, 'quests', id));
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, `families/${userAccount.familyId}/children/${selectedChildId}/quests/${id}`);
+      }
     });
   };
 
@@ -371,8 +466,12 @@ export default function App() {
           timestamp: new Date().toISOString()
         });
 
-        await batch.commit();
-
+        try {
+          await batch.commit();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `families/${familyId}/children/${childId}`);
+        }
+        
         confetti({
           particleCount: 150,
           spread: 100,
@@ -397,8 +496,7 @@ export default function App() {
         await batch.commit();
         showAlert('준비 완료', '모든 퀘스트가 초기화되었습니다. 내일도 화이팅!');
       } catch (error) {
-        console.error("Failed to reset daily quests:", error);
-        showAlert('오류', '퀘스트 초기화 중 오류가 발생했습니다.');
+        handleFirestoreError(error, OperationType.WRITE, `families/${userAccount.familyId}/children/${selectedChildId}/quests`);
       }
     });
   };
@@ -422,8 +520,7 @@ export default function App() {
         await batch.commit();
         showAlert('초기화 완료', '모든 데이터가 초기화되었습니다.');
       } catch (error) {
-        console.error("Failed to full reset:", error);
-        showAlert('오류', '초기화 중 오류가 발생했습니다.');
+        handleFirestoreError(error, OperationType.WRITE, `families/${userAccount.familyId}/children/${selectedChildId}`);
       }
     });
   };
@@ -432,11 +529,11 @@ export default function App() {
     if (!userAccount?.familyId || !selectedChildId) return;
     showConfirm('포인트 초기화', '정말 포인트를 0으로 초기화할까요?\n모아둔 모든 포인트가 사라지며 복구할 수 없습니다.', async () => {
       try {
-        await updateDoc(doc(db, 'families', userAccount.familyId, 'children', selectedChildId), { totalPoints: 0 });
+        const profileRef = doc(db, 'families', userAccount.familyId, 'children', selectedChildId);
+        await updateDoc(profileRef, { totalPoints: 0 });
         showAlert('초기화 완료', '포인트가 0으로 초기화되었습니다.');
       } catch (error) {
-        console.error("Failed to reset points:", error);
-        showAlert('오류', '포인트 초기화 중 오류가 발생했습니다.');
+        handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}/children/${selectedChildId}`);
       }
     });
   };
@@ -454,11 +551,11 @@ export default function App() {
         members: { [user.uid]: 'parent' }
       };
       await setDoc(familyRef, newFamily);
-      await updateDoc(doc(db, 'users', user.uid), { familyId: inviteCode });
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { familyId: inviteCode });
       showAlert('가족 생성 완료', `가족이 생성되었습니다! 초대 코드: ${inviteCode}`);
     } catch (error) {
-      console.error("Failed to create family:", error);
-      showAlert('오류', '가족 생성 중 오류가 발생했습니다.');
+      handleFirestoreError(error, OperationType.WRITE, 'families');
     }
   };
 
@@ -474,14 +571,14 @@ export default function App() {
           await updateDoc(familyRef, {
             [`members.${user.uid}`]: 'parent'
           });
-          await updateDoc(doc(db, 'users', user.uid), { familyId: inviteCode });
+          const userRef = doc(db, 'users', user.uid);
+          await updateDoc(userRef, { familyId: inviteCode });
           showAlert('가족 합류 완료', `${familyData.name} 가족에 합류했습니다!`);
         } else {
           showAlert('오류', '해당 코드를 가진 가족을 찾을 수 없습니다.');
         }
       } catch (error) {
-        console.error("Failed to join family:", error);
-        showAlert('오류', '가족 합류 중 오류가 발생했습니다.');
+        handleFirestoreError(error, OperationType.WRITE, `families/${inviteCode}`);
       }
     };
 
@@ -511,8 +608,7 @@ export default function App() {
       setSelectedChildId(docRef.id);
       showAlert('아이 등록 완료', `${name} 아이가 등록되었습니다!`);
     } catch (error) {
-      console.error("Failed to add child:", error);
-      showAlert('오류', '아이 등록 중 오류가 발생했습니다.');
+      handleFirestoreError(error, OperationType.CREATE, `families/${userAccount.familyId}/children`);
     }
   };
 
@@ -528,8 +624,7 @@ export default function App() {
         }
         showAlert('삭제 완료', `${childName} 아이의 정보가 삭제되었습니다.`);
       } catch (error) {
-        console.error("Failed to delete child:", error);
-        showAlert('오류', '아이 삭제 중 오류가 발생했습니다.');
+        handleFirestoreError(error, OperationType.DELETE, `families/${userAccount.familyId}/children/${childId}`);
       }
     };
 
@@ -583,27 +678,130 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#FDFCF0] flex flex-col items-center justify-center p-6">
-        <div className="bg-white rounded-3xl p-8 shadow-xl max-w-sm w-full text-center space-y-6">
-          <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto">
-            <Trophy size={40} className="text-yellow-500" />
+      <div className="min-h-screen flex bg-white font-sans overflow-hidden">
+        {/* Left Side: Premium Brand Visual */}
+        <div className="hidden lg:flex lg:w-3/5 relative bg-[#0F172A] items-center justify-center p-12 overflow-hidden">
+          {/* Subtle Grid Pattern */}
+          <div className="absolute inset-0 z-0 opacity-20" style={{ backgroundImage: 'radial-gradient(#ffffff 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+          
+          <div className="relative z-10 w-full max-w-2xl space-y-12">
+            <motion.div 
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8 }}
+              className="space-y-6"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-400/10 border border-yellow-400/20 text-yellow-400 text-xs font-black uppercase tracking-[0.2em]">
+                <Sparkles size={14} />
+                <span>Premium Family Experience</span>
+              </div>
+              <h1 className="text-7xl font-display font-black text-white leading-[0.9] tracking-tighter">
+                Adventure <br />
+                Is A <span className="text-yellow-400 underline decoration-4 underline-offset-8">Habit.</span>
+              </h1>
+              <p className="text-xl text-slate-400 font-medium max-w-lg leading-relaxed">
+                아이들의 성취를 기록하고, 가족의 유대감을 강화하세요. <br />
+                가장 진보된 패밀리 퀘스트 플랫폼, KidQuest.
+              </p>
+            </motion.div>
+
+            {/* App Mockup Preview */}
+            <motion.div 
+              initial={{ opacity: 0, y: 60 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1, delay: 0.2 }}
+              className="relative"
+            >
+              <div className="absolute -inset-4 bg-yellow-400/20 blur-3xl rounded-full"></div>
+              <div className="relative bg-slate-800 rounded-[2.5rem] border border-white/10 shadow-2xl overflow-hidden aspect-[16/10] flex items-center justify-center p-8">
+                <div className="w-full h-full bg-slate-900 rounded-2xl border border-white/5 p-6 space-y-6">
+                  <div className="flex justify-between items-center">
+                    <div className="w-24 h-4 bg-slate-800 rounded-full"></div>
+                    <div className="w-8 h-8 bg-yellow-400 rounded-lg"></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="h-32 bg-slate-800 rounded-2xl animate-pulse"></div>
+                    <div className="h-32 bg-slate-800 rounded-2xl animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                  </div>
+                  <div className="h-20 bg-slate-800 rounded-2xl animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                </div>
+              </div>
+            </motion.div>
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-slate-800">KidQuest</h1>
-            <p className="text-slate-500 mt-2">우리가족 퀘스트 관리 앱</p>
-          </div>
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-white border-2 border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-2xl transition-colors flex items-center justify-center gap-3"
+
+          {/* Floating Accents */}
+          <motion.div 
+            animate={{ y: [0, -20, 0] }}
+            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+            className="absolute top-20 right-20 text-yellow-500/10"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-            </svg>
-            Google로 시작하기
-          </button>
+            <Trophy size={200} />
+          </motion.div>
+        </div>
+
+        {/* Right Side: Clean Login Interface */}
+        <div className="w-full lg:w-2/5 flex flex-col justify-between p-8 md:p-20 bg-white">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center shadow-xl shadow-yellow-400/20">
+                <Trophy size={28} className="text-slate-900" />
+              </div>
+              <span className="text-3xl font-display font-black tracking-tight text-slate-900">KidQuest</span>
+            </div>
+          </div>
+
+          <motion.div 
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6 }}
+            className="space-y-12"
+          >
+            <div className="space-y-4">
+              <h2 className="text-5xl font-display font-black text-slate-900 leading-tight">
+                Welcome <br /> Back.
+              </h2>
+              <p className="text-slate-500 text-lg font-medium">
+                가족의 모험을 계속하려면 로그인해 주세요.
+              </p>
+            </div>
+
+            <div className="space-y-6">
+              <button 
+                onClick={() => {
+                  playSound(SOUNDS.CLICK);
+                  handleLogin();
+                }}
+                className="w-full group relative flex items-center justify-center gap-4 bg-slate-900 text-white font-black py-6 px-8 rounded-2xl transition-all hover:bg-slate-800 active:scale-[0.98] shadow-2xl shadow-slate-200"
+              >
+                <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center p-1">
+                  <svg viewBox="0 0 24 24" className="w-full h-full">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                  </svg>
+                </div>
+                <span className="text-xl">Google 계정으로 계속하기</span>
+              </button>
+
+              <div className="flex items-center gap-4 py-2">
+                <div className="h-px flex-1 bg-slate-100"></div>
+                <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">Secure Authentication</span>
+                <div className="h-px flex-1 bg-slate-100"></div>
+              </div>
+            </div>
+          </motion.div>
+
+          <footer className="space-y-6">
+            <div className="h-px bg-slate-100 w-full"></div>
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              <span>© 2024 KidQuest Platform</span>
+              <div className="flex gap-6">
+                <span className="hover:text-slate-600 cursor-pointer transition-colors">Terms of Service</span>
+                <span className="hover:text-slate-600 cursor-pointer transition-colors">Privacy Policy</span>
+              </div>
+            </div>
+          </footer>
         </div>
       </div>
     );
@@ -758,11 +956,15 @@ export default function App() {
               onFullReset={fullReset}
               onPointReset={resetPoints}
               profile={profile}
-              setProfile={async (p) => {
+              setProfile={async (p: any) => {
                 if (typeof p === 'function') {
                   const newP = p(profile);
                   if (userAccount?.familyId && selectedChildId) {
-                    await updateDoc(doc(db, 'families', userAccount.familyId, 'children', selectedChildId), { name: newP.name });
+                    try {
+                      await updateDoc(doc(db, 'families', userAccount.familyId, 'children', selectedChildId), { name: newP.name });
+                    } catch (error) {
+                      handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}/children/${selectedChildId}`);
+                    }
                   }
                 }
               }}
