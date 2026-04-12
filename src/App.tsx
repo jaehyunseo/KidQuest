@@ -4,22 +4,19 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Trophy, 
-  Plus, 
-  Trash2, 
-  CheckCircle2, 
-  Circle, 
-  Settings, 
-  User, 
+import {
+  Trophy,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  Circle,
+  Settings,
+  User,
   Sparkles,
   ChevronRight,
   Home,
   Users,
   Star,
-  BookOpen,
-  Heart,
-  Gamepad2,
   ShoppingBag,
   Lock,
   Unlock,
@@ -34,77 +31,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { GoogleGenAI } from "@google/genai";
 import { auth, db, googleProvider } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc, getDocFromServer } from 'firebase/firestore';
 import { Quest, QuestCategory, UserProfile, Reward, HistoryRecord, CATEGORY_COLORS, CATEGORY_LABELS, UserAccount, Family, ChildProfile } from './types';
 import { cn, getLevel, getProgressToNextLevel } from './lib/utils';
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
-    },
-    operationType,
-    path
-  }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
-// Sound effects URLs
-const SOUNDS = {
-  SUCCESS: 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3',
-  CLICK: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
-  CELEBRATE: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3',
-  ERROR: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'
-};
-
-const playSound = (url: string) => {
-  const audio = new Audio(url);
-  audio.volume = 0.4;
-  audio.play().catch(e => console.log('Audio play blocked:', e));
-};
+import { OperationType, handleFirestoreError } from './lib/firestoreError';
+import { SOUNDS, playSound } from './lib/sound';
+import { generateEncouragementText } from './lib/gemini';
+import { CategoryIcon } from './components/CategoryIcon';
 
 const INITIAL_QUESTS: Quest[] = [
   { id: '1', title: '수학 익힘책 풀기', points: 10, category: 'homework', completed: false },
@@ -636,32 +571,12 @@ export default function App() {
   };
 
   const generateEncouragement = async () => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.warn('GEMINI_API_KEY is not defined');
-      return;
-    }
     setIsLoadingAI(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const completedQuests = quests.filter(q => q.completed).map(q => q.title).join(', ');
-      const prompt = `당신은 아이들을 격려하는 다정한 선생님입니다. 아이가 오늘 완료한 일들(${completedQuests || '아직 없지만 시작하려는 중'})을 보고 아이에게 칭찬과 응원의 메시지를 한 문장으로 아주 재미있고 따뜻하게 해주세요. 이모티콘도 섞어서요.`;
-      
-      const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: prompt,
-      });
-      setEncouragement(response.text || '오늘도 멋진 하루를 만들어보자!');
-    } catch (error: any) {
-      console.error('AI Error:', error);
-      // Log more details if available
-      if (error.response) {
-        console.error('AI Error Response:', error.response);
-      }
-      setEncouragement('오늘도 너의 도전을 응원해! 화이팅! 🌟');
-    } finally {
-      setIsLoadingAI(false);
-    }
+    const text = await generateEncouragementText(
+      quests.filter(q => q.completed).map(q => q.title)
+    );
+    if (text) setEncouragement(text);
+    setIsLoadingAI(false);
   };
 
   useEffect(() => {
@@ -1234,7 +1149,7 @@ function ChildDashboard({
                   "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
                   quest.completed ? "bg-slate-200 text-slate-400" : CATEGORY_COLORS[quest.category] + " text-white"
                 )}>
-                  {getCategoryIcon(quest.category)}
+                  <CategoryIcon category={quest.category} />
                 </div>
                 
                 <div className="flex-1 min-w-0">
@@ -1546,7 +1461,7 @@ function CalendarView({ history }: { history: HistoryRecord[] }) {
                         </div>
                       ) : (
                         <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-white", CATEGORY_COLORS[record.category || 'other'])}>
-                          {getCategoryIcon(record.category || 'other', 16)}
+                          <CategoryIcon category={record.category || 'other'} size={16} />
                         </div>
                       )}
                       <div>
@@ -1970,7 +1885,7 @@ function ParentDashboard({
                 >
                   <div className="flex items-center gap-4">
                     <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg", CATEGORY_COLORS[q.category])}>
-                      {getCategoryIcon(q.category, 20)}
+                      <CategoryIcon category={q.category} size={20} />
                     </div>
                     <div>
                       <p className="font-black text-slate-800 leading-tight">{q.title}</p>
@@ -1998,15 +1913,6 @@ function ParentDashboard({
       </div>
     </div>
   );
-}
-
-function getCategoryIcon(category: QuestCategory, size = 24) {
-  switch (category) {
-    case 'homework': return <BookOpen size={size} />;
-    case 'chore': return <Heart size={size} />;
-    case 'habit': return <Star size={size} />;
-    default: return <Gamepad2 size={size} />;
-  }
 }
 
 function FamilySetup({ onCreate, onJoin, onLogout }: { 
