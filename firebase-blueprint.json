@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application (parent or child).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "User's display name" },
+        "email": { "type": "string", "description": "User's email address" },
+        "role": { "type": "string", "enum": ["parent", "child"], "description": "Role of the user" },
+        "familyId": { "type": "string", "description": "ID of the family this user belongs to" }
+      },
+      "required": ["uid", "name", "email", "role"]
+    },
+    "Family": {
+      "title": "Family",
+      "description": "A family group containing parents and children.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "inviteCode": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "members": { 
+          "type": "object",
+          "additionalProperties": { "type": "string", "enum": ["parent", "child"] }
+        }
+      },
+      "required": ["name", "inviteCode", "createdAt", "members"]
+    },
+    "Child": {
+      "title": "Child",
+      "description": "A child profile within a family.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "totalPoints": { "type": "number" },
+        "level": { "type": "number" },
+        "inventory": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "avatar", "totalPoints", "level", "inventory"]
+    },
+    "Quest": {
+      "title": "Quest",
+      "description": "A task for the child to complete.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "points": { "type": "number" },
+        "category": { "type": "string", "enum": ["homework", "chore", "habit", "etc"] },
+        "completed": { "type": "boolean" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "points", "category", "completed"]
+    },
+    "History": {
+      "title": "History",
+      "description": "Record of points earned or spent.",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["quest", "reward"] },
+        "title": { "type": "string" },
+        "points": { "type": "number" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "questId": { "type": "string" },
+        "rewardId": { "type": "string" }
+      },
+      "required": ["type", "title", "points", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user profiles and family mapping."
+    },
+    "/families/{familyId}": {
+      "schema": { "$ref": "#/entities/Family" },
+      "description": "Stores family group information."
+    },
+    "/families/{familyId}/children/{childId}": {
+      "schema": { "$ref": "#/entities/Child" },
+      "description": "Stores individual child profiles within a family."
+    },
+    "/families/{familyId}/children/{childId}/quests/{questId}": {
+      "schema": { "$ref": "#/entities/Quest" },
+      "description": "Stores quests for a specific child."
+    },
+    "/families/{familyId}/children/{childId}/history/{historyId}": {
+      "schema": { "$ref": "#/entities/History" },
+      "description": "Stores history for a specific child."
+    }
+  }
+}

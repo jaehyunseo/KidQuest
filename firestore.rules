@@ -1,0 +1,59 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getFamilyData(familyId) {
+      return get(/databases/$(database)/documents/families/$(familyId)).data;
+    }
+    
+    function isFamilyMember(familyId) {
+      let userData = getUserData();
+      return isAuthenticated() && userData.familyId == familyId;
+    }
+
+    function isParentOfFamily(familyId) {
+      let userData = getUserData();
+      return isFamilyMember(familyId) && userData.role == 'parent';
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+    
+    match /families/{familyId} {
+      allow read: if isFamilyMember(familyId);
+      allow create: if isAuthenticated();
+      allow update: if isParentOfFamily(familyId);
+
+      match /children/{childId} {
+        allow read: if isFamilyMember(familyId);
+        allow write: if isFamilyMember(familyId); // Both parents and children can update points/inventory
+
+        match /quests/{questId} {
+          allow read: if isFamilyMember(familyId);
+          allow write: if isFamilyMember(familyId);
+        }
+
+        match /history/{historyId} {
+          allow read: if isFamilyMember(familyId);
+          allow write: if isFamilyMember(familyId);
+        }
+      }
+    }
+  }
+}
