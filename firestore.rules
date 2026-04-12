@@ -36,9 +36,9 @@ service cloud.firestore {
     }
     
     match /families/{familyId} {
-      allow read: if isFamilyMember(familyId);
+      allow read: if isAuthenticated();
       allow create: if isAuthenticated();
-      allow update: if isParentOfFamily(familyId);
+      allow update: if isParentOfFamily(familyId) || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']));
 
       match /children/{childId} {
         allow read: if isFamilyMember(familyId);

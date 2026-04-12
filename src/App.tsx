@@ -15,6 +15,7 @@ import {
   Sparkles,
   ChevronRight,
   Home,
+  Users,
   Star,
   BookOpen,
   Heart,
@@ -28,7 +29,8 @@ import {
   Smartphone,
   Edit2,
   Calendar as CalendarIcon,
-  ChevronLeft
+  ChevronLeft,
+  Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -38,6 +40,20 @@ import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } fr
 import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc } from 'firebase/firestore';
 import { Quest, QuestCategory, UserProfile, Reward, HistoryRecord, CATEGORY_COLORS, CATEGORY_LABELS, UserAccount, Family, ChildProfile } from './types';
 import { cn, getLevel, getProgressToNextLevel } from './lib/utils';
+
+// Sound effects URLs
+const SOUNDS = {
+  SUCCESS: 'https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3',
+  CLICK: 'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
+  CELEBRATE: 'https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3',
+  ERROR: 'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3'
+};
+
+const playSound = (url: string) => {
+  const audio = new Audio(url);
+  audio.volume = 0.4;
+  audio.play().catch(e => console.log('Audio play blocked:', e));
+};
 
 const INITIAL_QUESTS: Quest[] = [
   { id: '1', title: '수학 익힘책 풀기', points: 10, category: 'homework', completed: false },
@@ -78,6 +94,11 @@ export default function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('quests');
   const [modal, setModal] = useState<ModalConfig>({ isOpen: false, title: '', message: '', type: 'alert' });
   
+  const exitParentMode = () => {
+    setIsParentMode(false);
+    setIsParentAuthenticated(false);
+  };
+
   const showAlert = (title: string, message: string) => {
     setModal({ isOpen: true, title, message, type: 'alert' });
   };
@@ -109,9 +130,12 @@ export default function App() {
               name: u.displayName || '사용자',
               role: 'parent' // Default to parent for first login
             };
-            setDoc(userRef, newAccount);
+            setDoc(userRef, newAccount).catch(err => console.error("Error creating user doc:", err));
             setUserAccount(newAccount);
           }
+        }, (error) => {
+          console.error("Error fetching user data:", error);
+          showAlert('데이터 오류', `사용자 정보를 불러오는 중 오류가 발생했습니다: ${error.message}`);
         });
       } else {
         setUserAccount(null);
@@ -208,9 +232,17 @@ export default function App() {
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed", error);
-      showAlert('로그인 실패', '로그인 중 오류가 발생했습니다.');
+      if (error.code === 'auth/unauthorized-domain') {
+        showAlert('로그인 실패', '이 도메인이 Firebase에 승인되지 않았습니다. Firebase Console의 Authentication > Settings > Authorized domains에 현재 URL을 추가해주세요.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        showAlert('로그인 취소', '로그인 팝업이 닫혔습니다. 다시 시도해주세요.');
+      } else if (error.code === 'auth/web-storage-unsupported') {
+        showAlert('로그인 실패', '브라우저 설정에서 서드파티 쿠키가 차단되어 있습니다. 설정에서 쿠키를 허용해주세요.');
+      } else {
+        showAlert('로그인 실패', `로그인 중 오류가 발생했습니다: ${error.message}`);
+      }
     }
   };
 
@@ -219,28 +251,31 @@ export default function App() {
   };
 
   const toggleQuest = async (id: string) => {
-    if (!user) return;
+    if (!user || !userAccount?.familyId || !selectedChildId) return;
     const quest = quests.find(q => q.id === id);
     if (!quest) return;
 
     const newCompleted = !quest.completed;
+    const familyId = userAccount.familyId;
+    const childId = selectedChildId;
     
     if (newCompleted) {
+      playSound(SOUNDS.SUCCESS);
       const batch = writeBatch(db);
       
       // Update Quest
-      batch.update(doc(db, 'users', user.uid, 'quests', id), { 
+      batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), { 
         completed: true, 
         completedAt: new Date().toISOString() 
       });
       
       // Update Profile Points
-      batch.update(doc(db, 'users', user.uid, 'profile', 'main'), {
+      batch.update(doc(db, 'families', familyId, 'children', childId), {
         totalPoints: profile.totalPoints + quest.points
       });
-
+ 
       // Add History
-      const historyRef = doc(collection(db, 'users', user.uid, 'history'));
+      const historyRef = doc(collection(db, 'families', familyId, 'children', childId, 'history'));
       batch.set(historyRef, {
         questId: quest.id,
         title: quest.title,
@@ -254,20 +289,22 @@ export default function App() {
       confetti({
         particleCount: 100,
         spread: 70,
-        origin: { y: 0.6 }
+        origin: { y: 0.6 },
+        colors: ['#FFD700', '#FFA500', '#FF4500']
       });
     } else {
+      playSound(SOUNDS.CLICK);
       const batch = writeBatch(db);
       
       // Update Quest
-      batch.update(doc(db, 'users', user.uid, 'quests', id), { 
+      batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), { 
         completed: false, 
         completedAt: null 
       });
       
       // Update Profile Points
-      batch.update(doc(db, 'users', user.uid, 'profile', 'main'), {
-        totalPoints: Math.max(0, profile.totalPoints - quest.points)
+      batch.update(doc(db, 'families', familyId, 'children', childId), {
+        totalPoints: profile.totalPoints - quest.points
       });
 
       // Remove History (find today's record for this quest)
@@ -276,7 +313,7 @@ export default function App() {
         h.questId === quest.id && new Date(h.timestamp).toDateString() === today
       );
       if (recordToDelete) {
-        batch.delete(doc(db, 'users', user.uid, 'history', recordToDelete.id));
+        batch.delete(doc(db, 'families', familyId, 'children', childId, 'history', recordToDelete.id));
       }
 
       await batch.commit();
@@ -284,8 +321,8 @@ export default function App() {
   };
 
   const addQuest = async (title: string, points: number, category: QuestCategory) => {
-    if (!user) return;
-    await addDoc(collection(db, 'users', user.uid, 'quests'), {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    await addDoc(collection(db, 'families', userAccount.familyId, 'children', selectedChildId, 'quests'), {
       title,
       points,
       category,
@@ -294,48 +331,58 @@ export default function App() {
   };
 
   const deleteQuest = (id: string) => {
-    if (!user) return;
+    if (!userAccount?.familyId || !selectedChildId) return;
     const quest = quests.find(q => q.id === id);
     if (!quest) return;
     showConfirm('퀘스트 삭제', `정말 '${quest.title}' 퀘스트를 삭제할까요?\n삭제하면 복구할 수 없습니다.`, async () => {
-      await deleteDoc(doc(db, 'users', user.uid, 'quests', id));
+      await deleteDoc(doc(db, 'families', userAccount.familyId!, 'children', selectedChildId!, 'quests', id));
     });
   };
 
   const purchaseReward = (reward: Reward) => {
-    if (!user) return;
+    if (!userAccount?.familyId || !selectedChildId) return;
     if (profile.totalPoints < reward.points) {
+      playSound(SOUNDS.ERROR);
       showAlert('포인트 부족', '포인트가 부족해요! 퀘스트를 더 완료해볼까요?');
       return;
     }
     
+    playSound(SOUNDS.CLICK);
     showConfirm('보상 구매', `정말 '${reward.title}' 보상을 구매할까요?\n구매 시 ${reward.points}P가 차감되며, 이 작업은 되돌릴 수 없습니다.`, async () => {
-      const batch = writeBatch(db);
-      
-      // Update Profile
-      batch.update(doc(db, 'users', user.uid, 'profile', 'main'), {
-        totalPoints: profile.totalPoints - reward.points,
-        inventory: [...profile.inventory, reward.id]
-      });
+      try {
+        playSound(SOUNDS.CELEBRATE);
+        const batch = writeBatch(db);
+        const familyId = userAccount.familyId!;
+        const childId = selectedChildId!;
+        
+        // Update Profile
+        batch.update(doc(db, 'families', familyId, 'children', childId), {
+          totalPoints: profile.totalPoints - reward.points,
+          inventory: [...profile.inventory, reward.id]
+        });
 
-      // Add History Record
-      const historyRef = doc(collection(db, 'users', user.uid, 'history'));
-      batch.set(historyRef, {
-        type: 'reward',
-        rewardId: reward.id,
-        title: reward.title,
-        points: -reward.points,
-        timestamp: new Date().toISOString()
-      });
+        // Add History Record
+        const historyRef = doc(collection(db, 'families', familyId, 'children', childId, 'history'));
+        batch.set(historyRef, {
+          type: 'reward',
+          rewardId: reward.id,
+          title: reward.title,
+          points: -reward.points,
+          timestamp: new Date().toISOString()
+        });
 
-      await batch.commit();
+        await batch.commit();
 
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: ['#4ade80', '#22c55e']
-      });
+        confetti({
+          particleCount: 150,
+          spread: 100,
+          origin: { y: 0.6 },
+          colors: ['#3B82F6', '#60A5FA', '#93C5FD']
+        });
+      } catch (error) {
+        console.error("Failed to purchase reward:", error);
+        playSound(SOUNDS.ERROR);
+      }
     });
   };
 
@@ -398,16 +445,16 @@ export default function App() {
     if (!user) return;
     try {
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const familyRef = doc(collection(db, 'families'));
+      const familyRef = doc(db, 'families', inviteCode); // Use inviteCode as ID for easier joining
       const newFamily: Family = {
-        id: familyRef.id,
+        id: inviteCode,
         name,
         inviteCode,
         createdAt: new Date().toISOString(),
         members: { [user.uid]: 'parent' }
       };
       await setDoc(familyRef, newFamily);
-      await updateDoc(doc(db, 'users', user.uid), { familyId: familyRef.id });
+      await updateDoc(doc(db, 'users', user.uid), { familyId: inviteCode });
       showAlert('가족 생성 완료', `가족이 생성되었습니다! 초대 코드: ${inviteCode}`);
     } catch (error) {
       console.error("Failed to create family:", error);
@@ -417,22 +464,35 @@ export default function App() {
 
   const joinFamily = async (inviteCode: string) => {
     if (!user) return;
-    try {
-      const familyRef = doc(db, 'families', inviteCode);
-      const snap = await getDoc(familyRef);
-      if (snap.exists()) {
-        const familyData = snap.data() as Family;
-        await updateDoc(familyRef, {
-          [`members.${user.uid}`]: 'parent'
-        });
-        await updateDoc(doc(db, 'users', user.uid), { familyId: inviteCode });
-        showAlert('가족 합류 완료', `${familyData.name} 가족에 합류했습니다!`);
-      } else {
-        showAlert('오류', '해당 ID의 가족을 찾을 수 없습니다.');
+    
+    const performJoin = async () => {
+      try {
+        const familyRef = doc(db, 'families', inviteCode);
+        const snap = await getDoc(familyRef);
+        if (snap.exists()) {
+          const familyData = snap.data() as Family;
+          await updateDoc(familyRef, {
+            [`members.${user.uid}`]: 'parent'
+          });
+          await updateDoc(doc(db, 'users', user.uid), { familyId: inviteCode });
+          showAlert('가족 합류 완료', `${familyData.name} 가족에 합류했습니다!`);
+        } else {
+          showAlert('오류', '해당 코드를 가진 가족을 찾을 수 없습니다.');
+        }
+      } catch (error) {
+        console.error("Failed to join family:", error);
+        showAlert('오류', '가족 합류 중 오류가 발생했습니다.');
       }
-    } catch (error) {
-      console.error("Failed to join family:", error);
-      showAlert('오류', '가족 합류 중 오류가 발생했습니다.');
+    };
+
+    if (userAccount?.familyId) {
+      showConfirm(
+        '가족 이동 안내', 
+        '새로운 가족에 합류하면 기존 가족의 정보는 더 이상 보이지 않게 됩니다. 계속할까요?', 
+        performJoin
+      );
+    } else {
+      performJoin();
     }
   };
 
@@ -456,21 +516,53 @@ export default function App() {
     }
   };
 
+  const deleteChild = async (childId: string, childName: string) => {
+    if (!userAccount?.familyId) return;
+    
+    const performDelete = async () => {
+      try {
+        const childRef = doc(db, 'families', userAccount.familyId!, 'children', childId);
+        await deleteDoc(childRef);
+        if (selectedChildId === childId) {
+          setSelectedChildId(null);
+        }
+        showAlert('삭제 완료', `${childName} 아이의 정보가 삭제되었습니다.`);
+      } catch (error) {
+        console.error("Failed to delete child:", error);
+        showAlert('오류', '아이 삭제 중 오류가 발생했습니다.');
+      }
+    };
+
+    showConfirm(
+      '아이 삭제 확인',
+      `${childName} 아이의 모든 데이터(포인트, 퀘스트 등)가 영구적으로 삭제됩니다. 정말 삭제할까요?`,
+      performDelete
+    );
+  };
+
   const generateEncouragement = async () => {
-    if (!process.env.GEMINI_API_KEY) return;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      console.warn('GEMINI_API_KEY is not defined');
+      return;
+    }
     setIsLoadingAI(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const completedQuests = quests.filter(q => q.completed).map(q => q.title).join(', ');
       const prompt = `당신은 아이들을 격려하는 다정한 선생님입니다. 아이가 오늘 완료한 일들(${completedQuests || '아직 없지만 시작하려는 중'})을 보고 아이에게 칭찬과 응원의 메시지를 한 문장으로 아주 재미있고 따뜻하게 해주세요. 이모티콘도 섞어서요.`;
       
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-flash-latest",
         contents: prompt,
       });
       setEncouragement(response.text || '오늘도 멋진 하루를 만들어보자!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('AI Error:', error);
+      // Log more details if available
+      if (error.response) {
+        console.error('AI Error Response:', error.response);
+      }
       setEncouragement('오늘도 너의 도전을 응원해! 화이팅! 🌟');
     } finally {
       setIsLoadingAI(false);
@@ -522,72 +614,23 @@ export default function App() {
       <FamilySetup 
         onCreate={createFamily} 
         onJoin={joinFamily} 
-        onLogout={handleLogout}
+        onLogout={handleLogout} 
       />
     );
   }
 
-  if (children.length === 0) {
-    return (
-      <div className="min-h-screen bg-[#FDFCF0] flex flex-col items-center justify-center p-6">
-        <div className="bg-white rounded-3xl p-8 shadow-xl max-w-sm w-full text-center space-y-6">
-          <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto">
-            <Plus size={40} className="text-yellow-500" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-black text-slate-800">아이 등록</h1>
-            <p className="text-slate-500 mt-2">가족에 등록된 아이가 없습니다.<br/>첫 번째 아이를 등록해주세요.</p>
-          </div>
-          <button 
-            onClick={() => addChild('우리 아이', '🦁')}
-            className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-black py-4 rounded-2xl transition-all shadow-lg shadow-yellow-100"
-          >
-            아이 등록하기
-          </button>
-          <button 
-            onClick={handleLogout}
-            className="text-slate-400 text-sm font-bold hover:text-slate-600"
-          >
-            로그아웃
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!selectedChildId) {
-    return (
-      <div className="min-h-screen bg-[#FDFCF0] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400"></div>
-      </div>
-    );
-  }
-
-  const handleParentAuth = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Simple mock password for demo purposes
-    if (parentPassword === '1234') {
-      setIsParentAuthenticated(true);
-      setParentPassword('');
-    } else {
-      showAlert('인증 실패', '비밀번호가 틀렸어요! (힌트: 1234)');
-    }
-  };
-
-  const exitParentMode = () => {
-    setIsParentMode(false);
-    setIsParentAuthenticated(false);
-  };
-
   return (
-    <div className="min-h-screen bg-[#FDFCF0] font-sans text-slate-900 pb-24">
+    <div className="min-h-screen bg-[#FDFCF0] font-sans text-slate-900 pb-24 md:pb-0 md:pl-24">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 flex justify-between items-center shadow-sm">
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 md:px-8 py-4 sticky top-0 z-30 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-3">
           <div className="relative group">
             <button 
-              onClick={() => setIsParentMode(true)}
-              className="w-12 h-12 bg-yellow-400 rounded-2xl flex items-center justify-center text-2xl shadow-inner cursor-pointer hover:scale-105 transition-transform"
+              onClick={() => {
+                playSound(SOUNDS.CLICK);
+                setIsParentMode(true);
+              }}
+              className="w-10 h-10 md:w-14 md:h-14 bg-yellow-400 rounded-2xl flex items-center justify-center text-xl md:text-3xl shadow-inner cursor-pointer hover:scale-105 transition-transform"
             >
               {profile.avatar}
             </button>
@@ -601,8 +644,11 @@ export default function App() {
             <div className="flex items-center gap-2">
               <select 
                 value={selectedChildId || ''} 
-                onChange={(e) => setSelectedChildId(e.target.value)}
-                className="font-bold text-lg leading-tight bg-transparent border-none focus:ring-0 p-0 cursor-pointer appearance-none"
+                onChange={(e) => {
+                  playSound(SOUNDS.CLICK);
+                  setSelectedChildId(e.target.value);
+                }}
+                className="font-black text-base md:text-xl leading-tight bg-transparent border-none focus:ring-0 p-0 cursor-pointer appearance-none"
               >
                 {children.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -611,8 +657,8 @@ export default function App() {
               <ChevronRight size={16} className="text-slate-400" />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">Lv.{profile.level}</span>
-              <div className="w-24 h-2 bg-slate-100 rounded-full overflow-hidden">
+              <span className="text-[10px] md:text-xs font-black bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">Lv.{profile.level}</span>
+              <div className="w-16 md:w-32 h-1.5 md:h-2 bg-slate-100 rounded-full overflow-hidden">
                 <motion.div 
                   className="h-full bg-yellow-400"
                   initial={{ width: 0 }}
@@ -625,56 +671,83 @@ export default function App() {
         <div className="flex items-center gap-2">
           {!isParentMode && (
             <button 
-              onClick={() => setIsParentMode(true)}
-              className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+              onClick={() => {
+                playSound(SOUNDS.CLICK);
+                setIsParentMode(true);
+              }}
+              className="p-2 md:p-3 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+              title="부모님 관리"
             >
-              <Settings size={24} />
+              <Settings size={20} className="md:w-6 md:h-6" />
             </button>
           )}
           <button 
-            onClick={handleLogout}
-            className="p-2 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+            onClick={() => {
+              playSound(SOUNDS.CLICK);
+              handleLogout();
+            }}
+            className="p-2 md:p-3 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+            title="로그아웃"
           >
-            <LogOut size={24} />
+            <LogOut size={20} className="md:w-6 md:h-6" />
           </button>
         </div>
       </header>
 
-      <main className="max-w-md mx-auto p-6">
+      <main className="max-w-5xl mx-auto p-4 md:p-10">
         {isParentMode ? (
           !isParentAuthenticated ? (
-            <div className="bg-white rounded-3xl p-8 shadow-xl border border-slate-200 text-center space-y-6">
-              <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-400">
-                <Lock size={32} />
-              </div>
-              <div className="space-y-2">
-                <h2 className="text-2xl font-black">부모님 확인</h2>
-                <p className="text-slate-500 text-sm">퀘스트를 관리하려면 비밀번호를 입력하세요.</p>
-              </div>
-              <form onSubmit={handleParentAuth} className="space-y-4">
-                <input 
-                  type="password" 
-                  placeholder="비밀번호 (1234)"
-                  value={parentPassword}
-                  onChange={(e) => setParentPassword(e.target.value)}
-                  className="w-full border-2 border-slate-100 rounded-2xl px-4 py-3 text-center text-2xl tracking-widest outline-none focus:border-yellow-400 transition-all"
-                />
-                <div className="flex gap-3">
-                  <button 
-                    type="button"
-                    onClick={() => setIsParentMode(false)}
-                    className="flex-1 bg-slate-100 text-slate-600 font-bold py-4 rounded-2xl"
-                  >
-                    취소
-                  </button>
-                  <button 
-                    type="submit"
-                    className="flex-1 bg-yellow-400 text-slate-900 font-black py-4 rounded-2xl shadow-lg shadow-yellow-100"
-                  >
-                    확인
-                  </button>
+            <div className="min-h-[60vh] flex items-center justify-center">
+              <div className="bg-white rounded-[2.5rem] p-8 md:p-12 shadow-2xl border border-slate-100 text-center space-y-8 max-w-sm w-full">
+                <div className="w-20 h-20 bg-yellow-50 rounded-[2rem] flex items-center justify-center mx-auto text-yellow-500 shadow-inner">
+                  <Lock size={40} />
                 </div>
-              </form>
+                <div className="space-y-2">
+                  <h2 className="text-2xl font-black tracking-tight">부모님 확인</h2>
+                  <p className="text-slate-500 text-sm font-bold">퀘스트를 관리하려면 비밀번호를 입력하세요.<br/>(기본: 1234)</p>
+                </div>
+                <form 
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (parentPassword === '1234') {
+                      playSound(SOUNDS.SUCCESS);
+                      setIsParentAuthenticated(true);
+                      setParentPassword('');
+                    } else {
+                      playSound(SOUNDS.ERROR);
+                      showAlert('인증 실패', '비밀번호가 틀렸어요! (힌트: 1234)');
+                    }
+                  }} 
+                  className="space-y-6"
+                >
+                  <input 
+                    type="password" 
+                    placeholder="••••"
+                    maxLength={4}
+                    value={parentPassword}
+                    onChange={(e) => setParentPassword(e.target.value)}
+                    className="w-full border-2 border-slate-100 rounded-2xl px-4 py-4 text-center text-3xl tracking-[1em] outline-none focus:border-yellow-400 transition-all bg-slate-50/50 font-black"
+                  />
+                  <div className="flex gap-3">
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        playSound(SOUNDS.CLICK);
+                        setIsParentMode(false);
+                      }}
+                      className="flex-1 bg-slate-100 text-slate-500 font-black py-4 rounded-2xl active:scale-95 transition-all"
+                    >
+                      취소
+                    </button>
+                    <button 
+                      type="submit"
+                      className="flex-1 bg-yellow-400 text-slate-900 font-black py-4 rounded-2xl shadow-lg shadow-yellow-100 active:scale-95 transition-all"
+                    >
+                      확인
+                    </button>
+                  </div>
+                </form>
+              </div>
             </div>
           ) : (
             <ParentDashboard 
@@ -693,12 +766,18 @@ export default function App() {
                   }
                 }
               }}
-              onExit={exitParentMode}
+              onExit={() => {
+                playSound(SOUNDS.CLICK);
+                exitParentMode();
+              }}
               family={family}
               childrenList={children}
               onAddChild={addChild}
+              onDeleteChild={deleteChild}
               selectedChildId={selectedChildId}
               onSelectChild={setSelectedChildId}
+              onJoinFamily={joinFamily}
+              showAlert={showAlert}
             />
           )
         ) : (
@@ -712,11 +791,17 @@ export default function App() {
               >
                 <ChildDashboard 
                   quests={quests} 
-                  onToggle={toggleQuest} 
+                  onToggle={(id) => {
+                    playSound(SOUNDS.CLICK);
+                    toggleQuest(id);
+                  }} 
                   profile={profile}
                   encouragement={encouragement}
                   isLoadingAI={isLoadingAI}
-                  onRefreshAI={generateEncouragement}
+                  onRefreshAI={() => {
+                    playSound(SOUNDS.CLICK);
+                    generateEncouragement();
+                  }}
                 />
               </motion.div>
             )}
@@ -730,7 +815,10 @@ export default function App() {
                 <RewardShop 
                   rewards={rewards} 
                   profile={profile} 
-                  onPurchase={purchaseReward} 
+                  onPurchase={(reward) => {
+                    playSound(SOUNDS.CLICK);
+                    purchaseReward(reward);
+                  }} 
                 />
               </motion.div>
             )}
@@ -761,48 +849,60 @@ export default function App() {
         )}
       </main>
 
-      {/* Bottom Navigation */}
+      {/* Navigation */}
       {!isParentMode && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 flex justify-around items-center z-10">
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 flex justify-around items-center z-40 md:top-0 md:bottom-0 md:left-0 md:w-24 md:flex-col md:border-t-0 md:border-r md:py-12 md:justify-center md:gap-12">
           <button 
-            onClick={() => setViewMode('quests')}
+            onClick={() => {
+              playSound(SOUNDS.CLICK);
+              setViewMode('quests');
+            }}
             className={cn(
-              "flex flex-col items-center gap-1 transition-colors",
+              "flex flex-col items-center gap-1 transition-all hover:scale-110",
               viewMode === 'quests' ? "text-yellow-500" : "text-slate-400"
             )}
           >
-            <Trophy size={24} />
-            <span className="text-[10px] font-bold">퀘스트</span>
+            <Trophy size={28} className="md:w-8 md:h-8" />
+            <span className="text-[10px] md:text-xs font-black">퀘스트</span>
           </button>
           <button 
-            onClick={() => setViewMode('calendar')}
+            onClick={() => {
+              playSound(SOUNDS.CLICK);
+              setViewMode('calendar');
+            }}
             className={cn(
-              "flex flex-col items-center gap-1 transition-colors",
+              "flex flex-col items-center gap-1 transition-all hover:scale-110",
               viewMode === 'calendar' ? "text-yellow-500" : "text-slate-400"
             )}
           >
-            <CalendarIcon size={24} />
-            <span className="text-[10px] font-bold">기록</span>
+            <CalendarIcon size={28} className="md:w-8 md:h-8" />
+            <span className="text-[10px] md:text-xs font-black">기록</span>
           </button>
           <button 
-            onClick={() => setViewMode('shop')}
+            onClick={() => {
+              playSound(SOUNDS.CLICK);
+              setViewMode('shop');
+            }}
             className={cn(
-              "flex flex-col items-center gap-1 transition-colors",
+              "flex flex-col items-center gap-1 transition-all hover:scale-110",
               viewMode === 'shop' ? "text-yellow-500" : "text-slate-400"
             )}
           >
-            <ShoppingBag size={24} />
-            <span className="text-[10px] font-bold">보상샵</span>
+            <ShoppingBag size={28} className="md:w-8 md:h-8" />
+            <span className="text-[10px] md:text-xs font-black">보상샵</span>
           </button>
           <button 
-            onClick={() => setViewMode('profile')}
+            onClick={() => {
+              playSound(SOUNDS.CLICK);
+              setViewMode('profile');
+            }}
             className={cn(
-              "flex flex-col items-center gap-1 transition-colors",
+              "flex flex-col items-center gap-1 transition-all hover:scale-110",
               viewMode === 'profile' ? "text-yellow-500" : "text-slate-400"
             )}
           >
-            <User size={24} />
-            <span className="text-[10px] font-bold">프로필</span>
+            <User size={28} className="md:w-8 md:h-8" />
+            <span className="text-[10px] md:text-xs font-black">프로필</span>
           </button>
         </nav>
       )}
@@ -1286,7 +1386,10 @@ function ParentDashboard({
   childrenList,
   onAddChild,
   selectedChildId,
-  onSelectChild
+  onSelectChild,
+  onJoinFamily,
+  onDeleteChild,
+  showAlert
 }: { 
   quests: Quest[], 
   onAdd: (title: string, points: number, category: QuestCategory) => void, 
@@ -1295,19 +1398,24 @@ function ParentDashboard({
   onFullReset: () => void,
   onPointReset: () => void,
   profile: UserProfile,
-  setProfile: React.Dispatch<React.SetStateAction<UserProfile>>,
+  setProfile: any,
   onExit: () => void,
   family: Family | null,
   childrenList: ChildProfile[],
   onAddChild: (name: string, avatar: string) => void,
   selectedChildId: string | null,
-  onSelectChild: (id: string) => void
+  onSelectChild: (id: string) => void,
+  onJoinFamily: (code: string) => void,
+  onDeleteChild: (id: string, name: string) => void,
+  showAlert: (title: string, message: string) => void
 }) {
   const [newTitle, setNewTitle] = useState('');
   const [newPoints, setNewPoints] = useState<number | string>(10);
   const [newCategory, setNewCategory] = useState<QuestCategory>('homework');
   const [isAddingChild, setIsAddingChild] = useState(false);
   const [newChildName, setNewChildName] = useState('');
+  const [isJoiningFamily, setIsJoiningFamily] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1325,244 +1433,365 @@ function ParentDashboard({
     setIsAddingChild(false);
   };
 
+  const handleJoinFamily = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!joinCode.trim()) return;
+    onJoinFamily(joinCode.trim().toUpperCase());
+    setJoinCode('');
+    setIsJoiningFamily(false);
+  };
+
   return (
-    <div className="space-y-6">
-      {/* Top Header with Exit Button */}
-      <div className="flex items-center justify-between bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+    <div className="space-y-6 pb-12">
+      {/* Sticky Top Header - Moved to the very top as requested */}
+      <div className="sticky top-0 z-30 -mx-6 px-6 py-3 bg-[#FDFCF0]/90 backdrop-blur-md border-b border-slate-200/50 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-slate-900 rounded-2xl flex items-center justify-center text-yellow-400">
+          <div className="w-10 h-10 bg-slate-900 rounded-2xl flex items-center justify-center text-yellow-400 shadow-lg shadow-slate-200">
             <Settings size={20} />
           </div>
           <div>
-            <h2 className="font-black text-slate-800">부모님 관리 모드</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Parent Control Center</p>
+            <h2 className="font-black text-slate-800 text-sm">부모님 관리</h2>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Control Center</p>
           </div>
         </div>
         <button 
           onClick={onExit}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-bold text-sm transition-all active:scale-95"
+          className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-600 rounded-xl font-bold text-xs transition-all active:scale-95 border border-slate-200 shadow-sm"
         >
           <LogOut size={16} />
-          나가기
+          관리 모드 나가기
         </button>
       </div>
 
-      {/* Family Info */}
-      <div className="bg-blue-600 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="relative z-10">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-black flex items-center gap-2">
-              <Home size={24} className="text-blue-200" />
-              {family?.name || '우리 가족'}
-            </h2>
-            <span className="text-[10px] font-black bg-blue-500/50 px-2 py-1 rounded-lg uppercase tracking-widest">Family Account</span>
-          </div>
-          <div className="bg-blue-700/50 rounded-2xl p-4 backdrop-blur-sm">
-            <p className="text-[10px] font-bold text-blue-200 uppercase mb-1 tracking-wider">가족 초대 코드 (ID)</p>
-            <div className="flex items-center justify-between">
-              <code className="text-xl font-black tracking-widest font-mono">{family?.id}</code>
-              <button 
-                onClick={() => {
-                  navigator.clipboard.writeText(family?.id || '');
-                  alert('ID가 복사되었습니다!');
-                }}
-                className="flex items-center gap-1 text-xs bg-white text-blue-600 px-3 py-1.5 rounded-xl font-black shadow-sm hover:bg-blue-50 transition-colors"
-              >
-                <Plus size={14} className="rotate-45" />
-                복사하기
-              </button>
-            </div>
-          </div>
-        </div>
-        <Sparkles className="absolute -right-4 -bottom-4 w-24 h-24 text-white/5 rotate-12" />
-      </div>
-
-      {/* Child Management */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-6 bg-blue-500 rounded-full" />
-            <h3 className="font-black text-lg text-slate-800">아이 관리</h3>
-          </div>
-          <button 
-            onClick={() => setIsAddingChild(!isAddingChild)}
-            className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl font-black text-xs flex items-center gap-1 hover:bg-blue-100 transition-colors"
-          >
-            <Plus size={14} />
-            새 아이 등록
-          </button>
-        </div>
-
-        {isAddingChild && (
-          <motion.form 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            onSubmit={handleAddChild} 
-            className="bg-slate-50 p-5 rounded-2xl space-y-4 border-2 border-blue-100"
-          >
-            <div>
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">아이 이름</label>
-              <input 
-                type="text" 
-                placeholder="예: 민수, 지혜"
-                value={newChildName}
-                onChange={(e) => setNewChildName(e.target.value)}
-                className="w-full border-2 border-slate-200 rounded-xl px-4 py-3 mt-1 outline-none focus:border-blue-400 bg-white font-bold transition-all"
-              />
-            </div>
-            <div className="flex gap-2">
-              <button type="submit" className="flex-2 bg-blue-500 text-white font-black py-3 rounded-xl shadow-lg shadow-blue-100 active:scale-95 transition-all">등록하기</button>
-              <button type="button" onClick={() => setIsAddingChild(false)} className="flex-1 bg-white border-2 border-slate-200 text-slate-400 font-bold py-3 rounded-xl active:scale-95 transition-all">취소</button>
-            </div>
-          </motion.form>
-        )}
-
-        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
-          {childrenList.map(c => (
-            <button
-              key={c.id}
-              onClick={() => onSelectChild(c.id)}
-              className={cn(
-                "flex-shrink-0 flex flex-col items-center gap-2 p-4 rounded-3xl border-2 transition-all active:scale-95",
-                selectedChildId === c.id 
-                  ? "border-blue-500 bg-blue-50 ring-4 ring-blue-50" 
-                  : "border-slate-100 bg-white hover:border-slate-200"
-              )}
-            >
-              <div className={cn(
-                "w-14 h-14 rounded-2xl flex items-center justify-center text-3xl shadow-inner transition-transform",
-                selectedChildId === c.id ? "scale-110" : ""
-              )}>
-                {c.avatar}
+      <div className="grid grid-cols-1 gap-6">
+        {/* Family Card */}
+        <div className="bg-blue-600 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-blue-200 relative overflow-hidden">
+          <div className="relative z-10 flex flex-col gap-6">
+            <div className="flex justify-between items-start">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-blue-200">
+                  <Home size={18} />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Family Account</span>
+                </div>
+                <h3 className="text-3xl font-black tracking-tight">{family?.name || '우리 가족'}</h3>
               </div>
-              <span className={cn("text-xs font-black", selectedChildId === c.id ? "text-blue-600" : "text-slate-500")}>
-                {c.name}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Selected Child Settings */}
-      <div className="bg-slate-900 rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 bg-slate-800 rounded-2xl flex items-center justify-center text-2xl">
-              {profile.avatar}
-            </div>
-            <div>
-              <h2 className="text-xl font-black">{profile.name} 관리</h2>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Child Settings</p>
-            </div>
-          </div>
-          
-          <div className="space-y-6">
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">아이 이름 수정</label>
-              <input 
-                type="text" 
-                value={profile.name}
-                onChange={(e) => setProfile(p => ({ ...p, name: e.target.value }))}
-                className="w-full bg-slate-800 border-none rounded-2xl px-4 py-3 mt-1 focus:ring-2 focus:ring-yellow-400 transition-all font-bold"
-              />
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => setIsJoiningFamily(!isJoiningFamily)}
+                  className="w-10 h-10 bg-blue-500/30 rounded-2xl flex items-center justify-center backdrop-blur-md border border-blue-400/30 hover:bg-blue-500/50 transition-colors"
+                  title="다른 가족 합류하기"
+                >
+                  <Users size={20} />
+                </button>
+              </div>
             </div>
             
-            <div className="space-y-3">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider ml-1">데이터 관리</p>
-              <button 
-                onClick={onReset}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-sm font-bold py-4 rounded-2xl transition-all active:scale-95 flex items-center justify-center gap-2 border border-slate-700"
-              >
-                <CheckCircle2 size={18} className="text-yellow-400" />
-                내일 퀘스트 준비 (체크 해제, 포인트 유지)
-              </button>
-              <div className="flex gap-3">
-                <button 
-                  onClick={onPointReset}
-                  className="flex-1 bg-red-900/20 text-red-400 hover:bg-red-900/40 text-xs font-bold py-4 rounded-2xl transition-all active:scale-95 border border-red-900/30"
+            <AnimatePresence>
+              {isJoiningFamily && (
+                <motion.form 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  onSubmit={handleJoinFamily}
+                  className="bg-white/10 rounded-3xl p-5 backdrop-blur-xl border border-white/20 space-y-3"
                 >
-                  포인트만 0으로
-                </button>
+                  <p className="text-xs font-bold text-blue-100">다른 가족 코드로 합류하기</p>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="가족 코드 입력"
+                      value={joinCode}
+                      onChange={(e) => setJoinCode(e.target.value)}
+                      className="flex-1 bg-white/20 border border-white/30 rounded-xl px-4 py-2 text-white placeholder:text-white/50 font-bold outline-none focus:bg-white/30"
+                    />
+                    <button type="submit" className="bg-white text-blue-600 px-4 py-2 rounded-xl font-black text-sm">합류</button>
+                  </div>
+                  <p className="text-[9px] text-blue-200">* 합류 시 기존 가족 정보는 보이지 않게 됩니다.</p>
+                </motion.form>
+              )}
+            </AnimatePresence>
+
+            <div className="bg-white/10 rounded-3xl p-5 backdrop-blur-xl border border-white/20">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-[10px] font-bold text-blue-100 uppercase tracking-widest">가족 초대 코드 (ID)</span>
+                <span className="text-[10px] font-bold text-blue-200">다른 보호자(배우자 등)를 초대하세요</span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <code className="text-2xl font-black tracking-[0.2em] font-mono bg-blue-900/20 px-4 py-2 rounded-xl flex-1 text-center truncate select-all">
+                  {family?.id}
+                </code>
                 <button 
-                  onClick={onFullReset}
-                  className="flex-1 bg-red-600 text-white hover:bg-red-700 text-xs font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg shadow-red-900/20"
+                  onClick={() => {
+                    navigator.clipboard.writeText(family?.id || '');
+                    showAlert('ID 복사 완료', '가족 초대 코드가 클립보드에 복사되었습니다. 다른 보호자에게 전달하여 함께 관리하세요!');
+                  }}
+                  className="bg-white text-blue-600 p-3 rounded-2xl font-black shadow-lg hover:scale-105 transition-transform active:scale-95 flex items-center justify-center"
+                  title="복사하기"
                 >
-                  모든 데이터 초기화
+                  <Copy size={20} />
                 </button>
               </div>
             </div>
+          </div>
+          <Sparkles className="absolute -right-8 -bottom-8 w-40 h-40 text-white/10 rotate-12" />
+        </div>
+
+        {/* Child Management */}
+        <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm space-y-6">
+          <div className="flex justify-between items-center">
+            <div className="space-y-1">
+              <h3 className="font-black text-xl text-slate-800">아이 관리</h3>
+              <p className="text-xs font-bold text-slate-400">함께 모험할 아이들을 등록하고 선택하세요</p>
+            </div>
+            <button 
+              onClick={() => setIsAddingChild(!isAddingChild)}
+              className={cn(
+                "w-10 h-10 rounded-2xl flex items-center justify-center transition-all active:scale-90",
+                isAddingChild ? "bg-slate-100 text-slate-400" : "bg-blue-50 text-blue-600 shadow-lg shadow-blue-100"
+              )}
+            >
+              <Plus size={24} className={cn("transition-transform", isAddingChild ? "rotate-45" : "")} />
+            </button>
+          </div>
+
+          <AnimatePresence>
+            {isAddingChild && (
+              <motion.form 
+                initial={{ opacity: 0, height: 0, scale: 0.95 }}
+                animate={{ opacity: 1, height: 'auto', scale: 1 }}
+                exit={{ opacity: 0, height: 0, scale: 0.95 }}
+                onSubmit={handleAddChild} 
+                className="bg-slate-50 p-6 rounded-[2rem] space-y-4 border-2 border-dashed border-slate-200 overflow-hidden"
+              >
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">아이 이름</label>
+                  <input 
+                    type="text" 
+                    placeholder="예: 민수, 지혜"
+                    value={newChildName}
+                    onChange={(e) => setNewChildName(e.target.value)}
+                    className="w-full border-2 border-slate-200 rounded-2xl px-5 py-4 outline-none focus:border-blue-400 bg-white font-bold text-lg transition-all shadow-inner"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button type="submit" className="flex-[2] bg-blue-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-100 active:scale-95 transition-all">등록하기</button>
+                  <button type="button" onClick={() => setIsAddingChild(false)} className="flex-1 bg-white border-2 border-slate-200 text-slate-400 font-bold py-4 rounded-2xl active:scale-95 transition-all">취소</button>
+                </div>
+              </motion.form>
+            )}
+          </AnimatePresence>
+
+          <div className="flex gap-4 overflow-x-auto py-6 scrollbar-hide -mx-2 px-4">
+            {childrenList.map(c => (
+              <div key={c.id} className="relative group">
+                <button
+                  onClick={() => onSelectChild(c.id)}
+                  className={cn(
+                    "flex-shrink-0 flex flex-col items-center gap-3 p-5 rounded-[2rem] border-2 transition-all active:scale-95 relative",
+                    selectedChildId === c.id 
+                      ? "border-blue-500 bg-blue-50 shadow-xl shadow-blue-100/50 scale-105" 
+                      : "border-slate-100 bg-white hover:border-slate-200"
+                  )}
+                >
+                  <div className={cn(
+                    "w-16 h-16 rounded-3xl flex items-center justify-center text-4xl shadow-inner transition-all",
+                    selectedChildId === c.id ? "bg-white" : "bg-slate-50 group-hover:bg-slate-100"
+                  )}>
+                    {c.avatar}
+                  </div>
+                  <div className="text-center">
+                    <p className={cn("text-sm font-black", selectedChildId === c.id ? "text-blue-600" : "text-slate-700")}>
+                      {c.name}
+                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">Lv.{c.level || 1}</p>
+                  </div>
+                  {selectedChildId === c.id && (
+                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-blue-500 rounded-full border-4 border-white flex items-center justify-center">
+                      <div className="w-1.5 h-1.5 bg-white rounded-full" />
+                    </div>
+                  )}
+                </button>
+                
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteChild(c.id, c.name);
+                  }}
+                  className="absolute -top-2 -left-2 w-8 h-8 bg-red-50 text-red-500 rounded-xl border border-red-100 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-sm hover:bg-red-500 hover:text-white"
+                  title="아이 삭제"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
           </div>
         </div>
-        <Lock className="absolute -right-4 -bottom-4 w-32 h-32 text-white/5 rotate-12" />
-      </div>
 
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-6">
-        <h3 className="font-black text-lg text-slate-800">새 퀘스트 추가</h3>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <input 
-            type="text" 
-            placeholder="할 일을 입력하세요 (예: 수학 문제집 풀기)"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            className="w-full border-2 border-slate-100 rounded-2xl px-4 py-3 focus:border-yellow-400 outline-none transition-all font-medium"
-          />
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">포인트</label>
-              <input 
-                type="number" 
-                value={newPoints}
-                onChange={(e) => setNewPoints(e.target.value === '' ? '' : Number(e.target.value))}
-                className="w-full border-2 border-slate-100 rounded-2xl px-4 py-3 focus:border-yellow-400 outline-none transition-all font-bold"
-              />
+        {/* Selected Child Settings */}
+        <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-2xl shadow-slate-900/20 relative overflow-hidden">
+          <div className="relative z-10 space-y-8">
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 bg-slate-800 rounded-[1.5rem] flex items-center justify-center text-3xl border border-slate-700 shadow-inner">
+                {profile.avatar}
+              </div>
+              <div>
+                <h2 className="text-2xl font-black tracking-tight">{profile.name} 관리</h2>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] font-black text-yellow-400 uppercase tracking-widest bg-yellow-400/10 px-2 py-0.5 rounded-md border border-yellow-400/20">Active Profile</span>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{profile.totalPoints} Points</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">아이 이름 수정</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={profile.name}
+                    onChange={(e) => setProfile(p => ({ ...p, name: e.target.value }))}
+                    className="w-full bg-slate-800/50 border-2 border-slate-700 rounded-2xl px-5 py-4 focus:border-yellow-400 focus:ring-0 transition-all font-black text-lg outline-none"
+                  />
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600">
+                    <Star size={20} />
+                  </div>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">데이터 초기화 및 관리</p>
+                <button 
+                  onClick={onReset}
+                  className="w-full bg-slate-800 hover:bg-slate-700 text-sm font-bold py-5 rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-3 border border-slate-700 group"
+                >
+                  <CheckCircle2 size={20} className="text-yellow-400 group-hover:scale-110 transition-transform" />
+                  내일 퀘스트 준비 (체크 해제, 포인트 유지)
+                </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={onPointReset}
+                    className="bg-red-900/20 text-red-400 hover:bg-red-900/40 text-xs font-bold py-5 rounded-2xl transition-all active:scale-[0.98] border border-red-900/30"
+                  >
+                    포인트만 초기화
+                  </button>
+                  <button 
+                    onClick={onFullReset}
+                    className="bg-red-600 text-white hover:bg-red-700 text-xs font-black py-5 rounded-2xl transition-all active:scale-[0.98] shadow-xl shadow-red-900/20"
+                  >
+                    모든 데이터 삭제
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <Lock className="absolute -right-8 -bottom-8 w-48 h-48 text-white/5 rotate-12" />
+        </div>
+
+        {/* New Quest Form */}
+        <div className="bg-white rounded-[2.5rem] p-8 border border-slate-200 shadow-sm space-y-8">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-yellow-100 rounded-2xl flex items-center justify-center text-yellow-600">
+              <Plus size={28} />
             </div>
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase ml-1">카테고리</label>
-              <select 
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value as QuestCategory)}
-                className="w-full border-2 border-slate-100 rounded-2xl px-4 py-3 focus:border-yellow-400 outline-none transition-all font-bold appearance-none bg-white"
-              >
-                {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
-                  <option key={val} value={val}>{label}</option>
-                ))}
-              </select>
+              <h3 className="font-black text-xl text-slate-800">새 퀘스트 추가</h3>
+              <p className="text-xs font-bold text-slate-400">아이에게 줄 새로운 미션을 만들어주세요</p>
             </div>
           </div>
 
-          <button 
-            type="submit"
-            className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-black py-4 rounded-2xl shadow-lg shadow-yellow-100 transition-all active:scale-95 flex items-center justify-center gap-2"
-          >
-            <Plus size={20} />
-            퀘스트 등록하기
-          </button>
-        </form>
-      </div>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">퀘스트 내용</label>
+              <input 
+                type="text" 
+                placeholder="예: 방 정리하기, 책 1권 읽기"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                className="w-full border-2 border-slate-100 rounded-2xl px-5 py-4 outline-none focus:border-yellow-400 bg-slate-50/50 font-bold text-lg transition-all"
+              />
+            </div>
 
-      <div className="space-y-4">
-        <h3 className="font-black text-lg text-slate-800">현재 퀘스트 목록</h3>
-        <div className="space-y-2">
-          {quests.map(q => (
-            <div key={q.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between group">
-              <div className="flex items-center gap-3">
-                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-white", CATEGORY_COLORS[q.category])}>
-                  {getCategoryIcon(q.category, 16)}
-                </div>
-                <div>
-                  <p className="font-bold text-slate-800 text-sm">{q.title}</p>
-                  <p className="text-[10px] font-bold text-orange-500">{q.points}P</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">보상 포인트</label>
+                <div className="relative">
+                  <input 
+                    type="number" 
+                    value={newPoints}
+                    onChange={(e) => setNewPoints(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-full border-2 border-slate-100 rounded-2xl px-5 py-4 outline-none focus:border-yellow-400 bg-slate-50/50 font-black text-lg transition-all"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 font-black text-yellow-600">P</span>
                 </div>
               </div>
-              <button 
-                onClick={() => onDelete(q.id)}
-                className="p-2 text-slate-300 hover:text-red-500 transition-colors"
-              >
-                <Trash2 size={18} />
-              </button>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">카테고리</label>
+                <div className="relative">
+                  <select 
+                    value={newCategory}
+                    onChange={(e) => setNewCategory(e.target.value as QuestCategory)}
+                    className="w-full border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-yellow-400 outline-none transition-all font-bold appearance-none bg-slate-50/50"
+                  >
+                    {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
+                  </select>
+                  <ChevronRight size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 rotate-90" />
+                </div>
+              </div>
             </div>
-          ))}
+
+            <button 
+              type="submit"
+              className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-black py-5 rounded-2xl shadow-xl shadow-yellow-100 transition-all active:scale-[0.98] flex items-center justify-center gap-3 text-lg"
+            >
+              <Plus size={24} />
+              퀘스트 등록하기
+            </button>
+          </form>
+        </div>
+
+        {/* Quest List */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-2">
+            <h3 className="font-black text-lg text-slate-800">현재 퀘스트 목록</h3>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{quests.length} Quests</span>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
+            {quests.length > 0 ? (
+              quests.map(q => (
+                <motion.div 
+                  layout
+                  key={q.id} 
+                  className="bg-white p-5 rounded-[2rem] border border-slate-100 flex items-center justify-between group hover:shadow-lg hover:shadow-slate-100 transition-all"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg", CATEGORY_COLORS[q.category])}>
+                      {getCategoryIcon(q.category, 20)}
+                    </div>
+                    <div>
+                      <p className="font-black text-slate-800 leading-tight">{q.title}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-2 py-0.5 rounded-md">{q.points}P</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">{CATEGORY_LABELS[q.category]}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => onDelete(q.id)}
+                    className="w-10 h-10 flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all active:scale-90"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </motion.div>
+              ))
+            ) : (
+              <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] p-12 text-center">
+                <p className="text-slate-400 font-bold">등록된 퀘스트가 없어요.<br/>새로운 도전을 만들어주세요!</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
@@ -1589,103 +1818,126 @@ function FamilySetup({ onCreate, onJoin, onLogout }: {
 
   return (
     <div className="min-h-screen bg-[#FDFCF0] flex flex-col items-center justify-center p-6">
-      <div className="bg-white rounded-3xl p-8 shadow-xl max-w-sm w-full text-center space-y-6">
-        <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
-          <Home size={40} className="text-blue-500" />
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="bg-white rounded-[2.5rem] p-10 shadow-2xl max-w-md w-full text-center space-y-8 border border-slate-100"
+      >
+        <div className="w-24 h-24 bg-blue-50 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner">
+          <Home size={48} className="text-blue-500" />
         </div>
         
         {mode === 'initial' && (
-          <>
+          <div className="space-y-8">
             <div>
-              <h1 className="text-2xl font-black text-slate-800">가족 설정</h1>
-              <p className="text-slate-500 mt-2">새로운 가족을 만들거나<br/>기존 가족에 합류하세요.</p>
+              <h1 className="text-3xl font-black text-slate-800 tracking-tight">가족 설정</h1>
+              <p className="text-slate-500 mt-3 font-medium">새로운 가족을 만들거나<br/>기존 가족의 코드로 합류하세요.</p>
             </div>
-            <div className="space-y-3">
+            <div className="grid gap-4">
               <button 
-                onClick={() => setMode('create')}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black py-4 rounded-2xl transition-all shadow-lg shadow-blue-100"
+                onClick={() => {
+                  playSound(SOUNDS.CLICK);
+                  setMode('create');
+                }}
+                className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
               >
+                <Plus size={24} />
                 새 가족 만들기
               </button>
               <button 
-                onClick={() => setMode('join')}
-                className="w-full bg-white border-2 border-slate-200 hover:bg-slate-50 text-slate-700 font-bold py-4 rounded-2xl transition-colors"
+                onClick={() => {
+                  playSound(SOUNDS.CLICK);
+                  setMode('join');
+                }}
+                className="w-full bg-white border-2 border-slate-100 text-slate-700 font-black py-5 rounded-2xl hover:bg-slate-50 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
               >
-                초대 코드로 합류하기
+                <Users size={24} className="text-blue-500" />
+                가족 코드로 합류하기
               </button>
             </div>
-          </>
+            <button 
+              onClick={() => {
+                playSound(SOUNDS.CLICK);
+                onLogout();
+              }}
+              className="text-slate-400 text-sm font-bold hover:text-slate-600 transition-colors"
+            >
+              다른 계정으로 로그인
+            </button>
+          </div>
         )}
 
         {mode === 'create' && (
-          <>
-            <div>
-              <h1 className="text-2xl font-black text-slate-800">가족 이름</h1>
-              <p className="text-slate-500 mt-2">가족의 이름을 정해주세요.</p>
+          <div className="space-y-6">
+            <div className="text-left">
+              <button 
+                onClick={() => {
+                  playSound(SOUNDS.CLICK);
+                  setMode('initial');
+                }} 
+                className="text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1 font-bold text-sm"
+              >
+                <ChevronLeft size={16} /> 뒤로가기
+              </button>
+              <h2 className="text-2xl font-black text-slate-800">가족 이름 정하기</h2>
+              <p className="text-slate-500 text-sm mt-1">우리 가족을 나타내는 이름을 입력해주세요.</p>
             </div>
-            <input
-              type="text"
+            <input 
+              type="text" 
+              placeholder="예: 행복한 우리집, 김씨네 가족"
               value={familyName}
               onChange={(e) => setFamilyName(e.target.value)}
-              placeholder="예: 우리집, 행복한가족"
-              className="w-full px-4 py-3 rounded-xl border-2 border-slate-100 focus:border-blue-400 focus:outline-none"
+              className="w-full border-2 border-slate-100 rounded-2xl px-6 py-4 outline-none focus:border-blue-400 bg-slate-50/50 font-bold text-lg transition-all"
             />
-            <div className="space-y-3">
-              <button 
-                onClick={() => onCreate(familyName)}
-                disabled={!familyName}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black py-4 rounded-2xl transition-all disabled:opacity-50"
-              >
-                생성하기
-              </button>
-              <button 
-                onClick={() => setMode('initial')}
-                className="w-full text-slate-400 font-bold py-2"
-              >
-                뒤로가기
-              </button>
-            </div>
-          </>
+            <button 
+              onClick={() => {
+                playSound(SOUNDS.CLICK);
+                onCreate(familyName);
+              }}
+              disabled={!familyName.trim()}
+              className="w-full bg-blue-600 disabled:bg-slate-200 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-100 transition-all active:scale-[0.98]"
+            >
+              가족 생성하기
+            </button>
+          </div>
         )}
 
         {mode === 'join' && (
-          <>
-            <div>
-              <h1 className="text-2xl font-black text-slate-800">초대 코드</h1>
-              <p className="text-slate-500 mt-2">가족 ID를 입력해주세요.</p>
+          <div className="space-y-6">
+            <div className="text-left">
+              <button 
+                onClick={() => {
+                  playSound(SOUNDS.CLICK);
+                  setMode('initial');
+                }} 
+                className="text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1 font-bold text-sm"
+              >
+                <ChevronLeft size={16} /> 뒤로가기
+              </button>
+              <h2 className="text-2xl font-black text-slate-800">가족 코드 입력</h2>
+              <p className="text-slate-500 text-sm mt-1">초대받은 6자리 코드를 입력해주세요.</p>
             </div>
-            <input
-              type="text"
+            <input 
+              type="text" 
+              placeholder="가족 코드 (예: ABCDEF)"
               value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value)}
-              placeholder="가족 ID 입력"
-              className="w-full px-4 py-3 rounded-xl border-2 border-slate-100 focus:border-blue-400 focus:outline-none"
+              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+              className="w-full border-2 border-slate-100 rounded-2xl px-6 py-4 outline-none focus:border-blue-400 bg-slate-50/50 font-black text-2xl tracking-[0.3em] text-center transition-all"
+              maxLength={6}
             />
-            <div className="space-y-3">
-              <button 
-                onClick={() => onJoin(inviteCode)}
-                disabled={!inviteCode}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-black py-4 rounded-2xl transition-all disabled:opacity-50"
-              >
-                합류하기
-              </button>
-              <button 
-                onClick={() => setMode('initial')}
-                className="w-full text-slate-400 font-bold py-2"
-              >
-                뒤로가기
-              </button>
-            </div>
-          </>
+            <button 
+              onClick={() => {
+                playSound(SOUNDS.CLICK);
+                onJoin(inviteCode);
+              }}
+              disabled={inviteCode.length < 4}
+              className="w-full bg-blue-600 disabled:bg-slate-200 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-100 transition-all active:scale-[0.98]"
+            >
+              가족 합류하기
+            </button>
+          </div>
         )}
-
-        <button 
-          onClick={onLogout}
-          className="text-slate-400 text-sm font-bold hover:text-slate-600"
-        >
-          로그아웃
-        </button>
-      </div>
+      </motion.div>
     </div>
   );
 }
