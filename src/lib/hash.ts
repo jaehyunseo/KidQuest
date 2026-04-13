@@ -14,3 +14,17 @@ export async function sha256(text: string): Promise<string> {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
+
+/** Hash `password` with the family-specific `salt`. */
+export async function saltedHash(password: string, salt: string): Promise<string> {
+  return sha256(`${salt}:${password}`);
+}
+
+/** Generate a random 16-byte salt as hex. */
+export function randomSalt(): string {
+  const buf = new Uint8Array(16);
+  crypto.getRandomValues(buf);
+  return Array.from(buf)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}

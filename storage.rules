@@ -1,0 +1,46 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ===============================================================
+    // KidQuest Storage Rules
+    // ---------------------------------------------------------------
+    // Path layout used by the app (see src/lib/storage.ts):
+    //   families/{familyId}/children/{childId}/avatar_{ts}.{ext}
+    //
+    // NOTE on authorization: Firestore rules can call get() to look up
+    // the user's familyId via /users/{uid}. Storage rules cannot query
+    // Firestore directly. We therefore allow:
+    //   - Any authenticated user can READ files (they are non-secret
+    //     avatar images, served via public download URLs anyway).
+    //   - Only authenticated users can WRITE, with strict constraints:
+    //     * file under 3MB
+    //     * image/* content type only
+    //     * path must live under families/*/children/*/...
+    //
+    // The deeper family-membership check is enforced at the app layer
+    // (Firestore doc for the child is gated by firestore.rules).
+    // ===============================================================
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isValidAvatar() {
+      return request.resource.size < 3 * 1024 * 1024 &&
+             request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    // Child avatar uploads
+    match /families/{familyId}/children/{childId}/{file=**} {
+      allow read: if isAuthed();
+      allow write: if isAuthed() && isValidAvatar();
+      allow delete: if isAuthed();
+    }
+
+    // Default deny for every other path.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

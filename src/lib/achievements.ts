@@ -86,8 +86,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: 'first_reward',
-    title: '첫 보상',
-    description: '첫 보상을 받았어요',
+    title: '첫 특별 미션',
+    description: '첫 특별 미션을 열었어요',
     icon: '🎁',
     color: 'from-pink-400 to-rose-500',
     check: (s) => s.rewardsRedeemed >= 1,

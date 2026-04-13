@@ -1,4 +1,4 @@
-import { Star } from 'lucide-react';
+import { Star, Lock, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Reward, UserProfile } from '../../types';
 import { cn } from '../../lib/utils';
@@ -13,7 +13,12 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="font-black text-2xl text-slate-800">보물 상점</h2>
+        <div>
+          <h2 className="font-black text-2xl text-slate-800">특별 미션 보드</h2>
+          <p className="text-xs font-bold text-slate-400 mt-0.5">
+            성장 포인트로 잠긴 미션을 열어보세요!
+          </p>
+        </div>
         <div className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-sm font-black flex items-center gap-1">
           <Star size={14} fill="currentColor" />
           {profile.totalPoints.toLocaleString()} P
@@ -21,36 +26,65 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
       </div>
 
       <div className="grid gap-4">
-        {rewards.map((reward) => (
-          <motion.div
-            key={reward.id}
-            whileHover={{ y: -2 }}
-            className="bg-white border-2 border-slate-100 rounded-3xl p-5 shadow-sm flex gap-4 items-center"
-          >
-            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-4xl shadow-inner">
-              {reward.icon}
-            </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-slate-800">{reward.title}</h3>
-              <p className="text-xs text-slate-500 leading-tight mt-1">{reward.description}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-sm font-black text-orange-500">{reward.points.toLocaleString()} P</span>
-              </div>
-            </div>
-            <button
-              onClick={() => onPurchase(reward)}
-              disabled={profile.totalPoints < reward.points}
+        {rewards.map((reward) => {
+          const unlocked = profile.totalPoints >= reward.points;
+          return (
+            <motion.div
+              key={reward.id}
+              whileHover={{ y: -2 }}
               className={cn(
-                "px-4 py-2 rounded-xl font-black text-sm transition-all active:scale-95",
-                profile.totalPoints >= reward.points
-                  ? "bg-yellow-400 text-slate-900 shadow-lg shadow-yellow-100"
-                  : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                "bg-white border-2 rounded-3xl p-5 shadow-sm flex gap-4 items-center",
+                unlocked ? "border-yellow-200" : "border-slate-100"
               )}
             >
-              구매
-            </button>
-          </motion.div>
-        ))}
+              <div className={cn(
+                "w-16 h-16 rounded-2xl flex items-center justify-center text-4xl shadow-inner relative",
+                unlocked ? "bg-yellow-50" : "bg-slate-50"
+              )}>
+                {reward.icon}
+                {!unlocked && (
+                  <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-slate-300 rounded-full flex items-center justify-center text-white">
+                    <Lock size={12} />
+                  </div>
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className="font-bold text-slate-800">{reward.title}</h3>
+                <p className="text-xs text-slate-500 leading-tight mt-1">{reward.description}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-sm font-black text-orange-500">{reward.points.toLocaleString()} P</span>
+                  {!unlocked && (
+                    <span className="text-[10px] font-bold text-slate-400">
+                      · {(reward.points - profile.totalPoints).toLocaleString()}P 더 필요
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => onPurchase(reward)}
+                disabled={!unlocked}
+                className={cn(
+                  "px-4 py-2 rounded-xl font-black text-xs transition-all active:scale-95 flex items-center gap-1.5",
+                  unlocked
+                    ? "bg-yellow-400 text-slate-900 shadow-lg shadow-yellow-100"
+                    : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                )}
+              >
+                {unlocked ? (
+                  <>
+                    <Sparkles size={12} />
+                    도전하기
+                  </>
+                ) : (
+                  <>
+                    <Lock size={12} />
+                    잠김
+                  </>
+                )}
+              </button>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

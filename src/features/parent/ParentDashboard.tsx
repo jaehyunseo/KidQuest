@@ -5,6 +5,7 @@ import {
   type ChildProfile,
   type CustomCategory,
   type Family,
+  type HistoryRecord,
   type Quest,
   type QuestCategory,
   type Reward,
@@ -22,10 +23,12 @@ import { UndoToast } from './components/UndoToast';
 import { OnboardingBanner } from './components/OnboardingBanner';
 import { RewardManager } from './components/RewardManager';
 import { CategoryManager } from './components/CategoryManager';
+import { WeeklyReport } from './components/WeeklyReport';
 import { AVATAR_OPTIONS } from './constants';
 
 interface ParentDashboardProps {
   quests: Quest[];
+  history: HistoryRecord[];
   onAdd: (title: string, points: number, category: QuestCategory) => void;
   onDelete: (id: string) => void;
   onReset: () => void;
@@ -62,6 +65,7 @@ interface ParentDashboardProps {
 export function ParentDashboard(props: ParentDashboardProps) {
   const {
     quests,
+    history,
     onAdd,
     onDelete,
     onReset,
@@ -158,6 +162,7 @@ export function ParentDashboard(props: ParentDashboardProps) {
             {hasSelectedChild ? (
               <>
                 <ChildSummaryWidget profile={profile} quests={quests} />
+                <WeeklyReport profile={{ name: profile.name, streak: profile.streak, longestStreak: profile.longestStreak, achievements: profile.achievements, totalCompleted: profile.totalCompleted }} history={history} />
                 <QuestQuickAdd onAdd={onAdd} customCategories={customCategories} />
                 <QuestList
                   quests={quests}

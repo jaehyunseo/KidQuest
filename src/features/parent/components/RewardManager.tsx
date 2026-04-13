@@ -59,9 +59,9 @@ export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardMana
             🎁
           </div>
           <div>
-            <h3 className="font-black text-lg text-slate-800">보물 상점 관리</h3>
+            <h3 className="font-black text-lg text-slate-800">특별 미션 보드</h3>
             <p className="text-[10px] font-bold text-slate-400">
-              아이가 모은 성장 포인트로 받을 수 있는 보상을 만들어주세요
+              아이가 성장 포인트를 모아 열 수 있는 특별한 경험을 만들어주세요
             </p>
           </div>
         </div>
@@ -89,7 +89,7 @@ export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardMana
             className="bg-pink-50 p-5 rounded-2xl space-y-3 overflow-hidden border-2 border-dashed border-pink-200"
           >
             <p className="text-[10px] font-black text-pink-600 uppercase tracking-widest">
-              {editingId ? '보상 수정' : '새 보상 만들기'}
+              {editingId ? '미션 수정' : '새 특별 미션 만들기'}
             </p>
             <div className="grid grid-cols-8 gap-1.5">
               {REWARD_EMOJIS.map((e) => (
@@ -108,7 +108,7 @@ export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardMana
             </div>
             <input
               type="text"
-              placeholder="보상 이름 (예: 아이스크림 1개)"
+              placeholder="미션 이름 (예: 가족 영화의 밤, 주말 캠핑)"
               value={draft.title}
               onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
               className="w-full border-2 border-pink-200 rounded-xl px-4 py-3 outline-none focus:border-pink-400 bg-white font-bold text-sm"
@@ -147,7 +147,7 @@ export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardMana
                 disabled={!draft.title.trim() || draft.points <= 0}
                 className="flex-[2] bg-pink-500 disabled:bg-slate-200 text-white font-black py-3 rounded-xl text-sm shadow-lg shadow-pink-100"
               >
-                {editingId ? '수정 완료' : '보상 등록'}
+                {editingId ? '수정 완료' : '미션 등록'}
               </button>
             </div>
           </motion.form>
@@ -191,8 +191,8 @@ export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardMana
         ) : (
           <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
             <p className="text-slate-400 font-bold text-xs">
-              아직 보상이 없어요.
-              <br />위 + 버튼으로 첫 보상을 만들어보세요!
+              아직 특별 미션이 없어요.
+              <br />위 + 버튼으로 첫 미션을 만들어보세요!
             </p>
           </div>
         )}

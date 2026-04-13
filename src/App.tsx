@@ -28,13 +28,11 @@ import { useChildData } from './hooks/useChildData';
 import { useRewards } from './hooks/useRewards';
 import { useCategories } from './hooks/useCategories';
 import { uploadChildAvatar, deleteChildAvatar } from './lib/storage';
-import { sha256 } from './lib/hash';
+import { sha256, saltedHash, randomSalt } from './lib/hash';
 import {
-  ACHIEVEMENTS,
   evaluateNewBadges,
   localDateKey,
   nextStreak,
-  profileStats,
 } from './lib/achievements';
 import { PrivacyConsentModal, type ConsentResult } from './features/auth/PrivacyConsentModal';
 import { CURRENT_CONSENT_VERSION } from './features/auth/consent';
@@ -43,6 +41,7 @@ import { generateEncouragementText } from './lib/gemini';
 import { CategoryIcon } from './components/CategoryIcon';
 import { Avatar } from './components/Avatar';
 import { ChildSwitcher } from './components/ChildSwitcher';
+import { BadgeUnlockModal } from './components/BadgeUnlockModal';
 import { RewardShop } from './features/child/RewardShop';
 import { ProfileView } from './features/child/ProfileView';
 import { CalendarView } from './features/child/CalendarView';
@@ -105,6 +104,59 @@ export default function App() {
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [dayKey, setDayKey] = useState<string>(localDateKey());
+  const [unlockQueue, setUnlockQueue] = useState<string[]>([]);
+
+  // Track the current local day. Bumps on visibility change (returning
+  // to the tab the next morning) and on a 1-minute interval (for tabs
+  // left open through midnight). Downstream effects depend on `dayKey`
+  // to auto-reset completed quests when the day rolls over.
+  useEffect(() => {
+    const tick = () => {
+      const k = localDateKey();
+      setDayKey((prev) => (prev === k ? prev : k));
+    };
+    const interval = setInterval(tick, 60 * 1000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    window.addEventListener('focus', tick);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('focus', tick);
+    };
+  }, []);
+
+  // Auto-reset quest checks when the local day rolls over.
+  // A quest is "stale" if it's marked completed but `completedAt` is before
+  // today's local date. We uncheck it WITHOUT subtracting points (yesterday's
+  // effort stays earned). Runs when `dayKey`, `quests`, or `selectedChildId`
+  // changes, so it fires both on mount and whenever midnight passes.
+  useEffect(() => {
+    if (!userAccount?.familyId || !selectedChildId || quests.length === 0) return;
+    const staleQuests = quests.filter((q) => {
+      if (!q.completed || !q.completedAt) return false;
+      return localDateKey(new Date(q.completedAt)) < dayKey;
+    });
+    if (staleQuests.length === 0) return;
+    const run = async () => {
+      const batch = writeBatch(db);
+      staleQuests.forEach((q) => {
+        batch.update(
+          doc(db, 'families', userAccount.familyId!, 'children', selectedChildId, 'quests', q.id),
+          { completed: false, completedAt: null }
+        );
+      });
+      try {
+        await batch.commit();
+      } catch (error) {
+        console.warn('[auto-reset] failed to uncheck stale quests', error);
+      }
+    };
+    void run();
+  }, [dayKey, quests, userAccount?.familyId, selectedChildId]);
 
   // Level up logic
   useEffect(() => {
@@ -293,13 +345,8 @@ export default function App() {
         colors: ['#FFD700', '#FFA500', '#FF4500']
       });
 
-      // Celebrate newly-unlocked badges
+      // Celebrate newly-unlocked badges via the dedicated modal queue
       if (newBadges.length) {
-        const names = newBadges
-          .map((id) => ACHIEVEMENTS.find((a) => a.id === id))
-          .filter(Boolean)
-          .map((a) => `${a!.icon} ${a!.title}`)
-          .join('\n');
         setTimeout(() => {
           confetti({
             particleCount: 200,
@@ -307,7 +354,7 @@ export default function App() {
             origin: { y: 0.5 },
             colors: ['#FFD700', '#FF69B4', '#8B5CF6', '#3B82F6'],
           });
-          showAlert('새 배지를 획득했어요!', names);
+          setUnlockQueue((q) => [...q, ...newBadges]);
         }, 400);
       }
     } else {
@@ -378,7 +425,7 @@ export default function App() {
     }
     
     playSound(SOUNDS.CLICK);
-    showConfirm('보상 구매', `정말 '${reward.title}' 보상을 구매할까요?\n구매 시 ${reward.points}P가 차감되며, 이 작업은 되돌릴 수 없습니다.`, async () => {
+    showConfirm('특별 미션 도전', `정말 '${reward.title}' 미션을 열어볼까요?\n${reward.points}P가 사용되며, 이 작업은 되돌릴 수 없습니다.`, async () => {
       try {
         playSound(SOUNDS.CELEBRATE);
         const batch = writeBatch(db);
@@ -430,6 +477,12 @@ export default function App() {
           origin: { y: 0.6 },
           colors: ['#3B82F6', '#60A5FA', '#93C5FD']
         });
+
+        if (newBadges.length) {
+          setTimeout(() => {
+            setUnlockQueue((q) => [...q, ...newBadges]);
+          }, 500);
+        }
       } catch (error) {
         console.error("Failed to purchase reward:", error);
         playSound(SOUNDS.ERROR);
@@ -455,7 +508,7 @@ export default function App() {
 
   const fullReset = () => {
     if (!userAccount?.familyId || !selectedChildId) return;
-    showConfirm('전체 초기화', '정말 모든 데이터를 초기화할까요? (포인트, 기록, 보상 모두 삭제되며 복구할 수 없습니다)', async () => {
+    showConfirm('전체 초기화', '정말 모든 데이터를 초기화할까요? (포인트, 기록, 달성 미션 모두 삭제되며 복구할 수 없습니다)', async () => {
       try {
         const batch = writeBatch(db);
         quests.forEach(q => {
@@ -495,7 +548,8 @@ export default function App() {
     try {
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const familyRef = doc(db, 'families', inviteCode); // Use inviteCode as ID for easier joining
-      const defaultPasswordHash = await sha256('1234');
+      const salt = randomSalt();
+      const defaultPasswordHash = await saltedHash('1234', salt);
       const newFamily: Family = {
         id: inviteCode,
         name,
@@ -504,12 +558,17 @@ export default function App() {
         members: { [user.uid]: 'parent' },
       };
       await setDoc(familyRef, newFamily);
-      // Parent password hash lives in a parent-only private subdoc so it
-      // is NOT exposed via the join-by-invite-code read of the family doc.
+      // Parent password hash + salt live in a parent-only private subdoc
+      // so they are NOT exposed via the join-by-invite-code read of the
+      // family doc. Salt makes the hash resistant to rainbow tables.
       try {
         await setDoc(
           doc(db, 'families', inviteCode, 'private', 'config'),
-          { parentPasswordHash: defaultPasswordHash, updatedAt: new Date().toISOString() }
+          {
+            parentPasswordHash: defaultPasswordHash,
+            parentPasswordSalt: salt,
+            updatedAt: new Date().toISOString(),
+          }
         );
       } catch (secretErr) {
         console.warn('Failed to seed private config:', secretErr);
@@ -646,19 +705,25 @@ export default function App() {
   };
 
   // ===== Parent Password =====
-  // Hash is stored in families/{id}/private/config, readable only by parents.
+  // Hash + salt are stored in families/{id}/private/config, readable only
+  // by parents. Legacy families without a salt fall back to unsalted sha256.
   const verifyParentPassword = async (input: string): Promise<boolean> => {
     if (!userAccount?.familyId) return false;
-    const inputHash = await sha256(input);
     try {
       const snap = await getDoc(doc(db, 'families', userAccount.familyId, 'private', 'config'));
-      const stored = snap.exists() ? (snap.data() as any)?.parentPasswordHash : undefined;
+      const data = snap.exists() ? (snap.data() as any) : null;
+      const stored = data?.parentPasswordHash as string | undefined;
+      const salt = data?.parentPasswordSalt as string | undefined;
       if (!stored) {
-        // Legacy / unseeded — fall back to default '1234'
+        // Unseeded — fall back to default '1234' via unsalted sha256.
         const defaultHash = await sha256('1234');
-        return inputHash === defaultHash;
+        return (await sha256(input)) === defaultHash;
       }
-      return inputHash === stored;
+      if (salt) {
+        return (await saltedHash(input, salt)) === stored;
+      }
+      // Legacy pre-salt hash
+      return (await sha256(input)) === stored;
     } catch {
       return false;
     }
@@ -672,10 +737,15 @@ export default function App() {
     const ok = await verifyParentPassword(current);
     if (!ok) return { ok: false, error: '현재 비밀번호가 올바르지 않아요' };
     try {
-      const nextHash = await sha256(next);
+      const salt = randomSalt();
+      const nextHash = await saltedHash(next, salt);
       await setDoc(
         doc(db, 'families', userAccount.familyId, 'private', 'config'),
-        { parentPasswordHash: nextHash, updatedAt: new Date().toISOString() },
+        {
+          parentPasswordHash: nextHash,
+          parentPasswordSalt: salt,
+          updatedAt: new Date().toISOString(),
+        },
         { merge: true }
       );
       return { ok: true };
@@ -1066,6 +1136,7 @@ export default function App() {
           ) : (
             <ParentDashboard
               quests={quests}
+              history={history}
               onAdd={addQuest}
               onDelete={deleteQuest}
               onReset={resetDaily}
@@ -1220,7 +1291,7 @@ export default function App() {
             )}
           >
             <ShoppingBag size={28} className="md:w-8 md:h-8" />
-            <span className="text-[10px] md:text-xs font-black">보상샵</span>
+            <span className="text-[10px] md:text-xs font-black">미션 보드</span>
           </button>
           <button 
             onClick={() => {
@@ -1279,6 +1350,11 @@ export default function App() {
         onClose={handleConsentReject}
         onAgree={handleConsentAgree}
         blocking
+      />
+
+      <BadgeUnlockModal
+        queue={unlockQueue}
+        onDismiss={(id) => setUnlockQueue((q) => q.filter((x) => x !== id))}
       />
     </div>
   );

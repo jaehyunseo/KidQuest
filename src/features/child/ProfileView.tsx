@@ -37,7 +37,7 @@ export function ProfileView({ profile, rewards }: ProfileViewProps) {
           <p className="text-xl font-black text-slate-800 mt-1">{profile.totalPoints.toLocaleString()}P</p>
         </div>
         <div className="bg-white p-4 rounded-3xl border border-slate-100 text-center">
-          <p className="text-[10px] font-bold text-slate-400 uppercase">보유 보상</p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase">달성한 미션</p>
           <p className="text-xl font-black text-slate-800 mt-1">{profile.inventory.length}개</p>
         </div>
         <div className="bg-gradient-to-br from-orange-400 to-red-500 p-4 rounded-3xl text-white text-center">
@@ -106,7 +106,7 @@ export function ProfileView({ profile, rewards }: ProfileViewProps) {
       <div className="space-y-4">
         <h3 className="font-black text-lg text-slate-800 flex items-center gap-2">
           <Gift size={20} className="text-pink-500" />
-          나의 보물함
+          달성한 특별 미션
         </h3>
         {inventoryItems.length > 0 ? (
           <div className="grid grid-cols-2 gap-3">
@@ -119,7 +119,7 @@ export function ProfileView({ profile, rewards }: ProfileViewProps) {
           </div>
         ) : (
           <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center">
-            <p className="text-slate-400 text-sm font-medium">아직 획득한 보상이 없어요.<br/>상점에서 포인트를 사용해보세요!</p>
+            <p className="text-slate-400 text-sm font-medium">아직 달성한 특별 미션이 없어요.<br/>포인트를 모아 미션을 열어보세요!</p>
           </div>
         )}
       </div>
