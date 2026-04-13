@@ -42,7 +42,7 @@ export function CalendarView({ history }: CalendarViewProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="font-black text-2xl text-slate-800">성장 기록</h2>
+        <h2 className="font-black text-2xl text-slate-800">나의 성장 일기</h2>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="p-2 bg-white rounded-xl border border-slate-100 text-slate-400 hover:text-slate-600">
             <ChevronLeft size={20} />

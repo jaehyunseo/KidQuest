@@ -299,7 +299,7 @@ export default function App() {
     if (!userAccount?.familyId || !selectedChildId) return;
     const quest = quests.find(q => q.id === id);
     if (!quest) return;
-    showConfirm('퀘스트 삭제', `정말 '${quest.title}' 퀘스트를 삭제할까요?\n삭제하면 복구할 수 없습니다.`, async () => {
+    showConfirm('약속 삭제', `정말 '${quest.title}' 약속을 삭제할까요?\n삭제하면 복구할 수 없습니다.`, async () => {
       try {
         await deleteDoc(doc(db, 'families', userAccount.familyId!, 'children', selectedChildId!, 'quests', id));
       } catch (error) {
@@ -312,7 +312,7 @@ export default function App() {
     if (!userAccount?.familyId || !selectedChildId) return;
     if (profile.totalPoints < reward.points) {
       playSound(SOUNDS.ERROR);
-      showAlert('포인트 부족', '포인트가 부족해요! 퀘스트를 더 완료해볼까요?');
+      showAlert('성장 포인트 부족', '포인트가 부족해요! 약속을 더 지켜볼까요?');
       return;
     }
     
@@ -361,14 +361,14 @@ export default function App() {
 
   const resetDaily = () => {
     if (!userAccount?.familyId || !selectedChildId) return;
-    showConfirm('내일 준비', '내일을 위해 퀘스트 체크만 해제할까요? (모은 포인트는 유지됩니다)', async () => {
+    showConfirm('내일 다시 시작', '내일을 위해 오늘의 약속 체크만 해제할까요? (모은 성장 포인트는 유지됩니다)', async () => {
       try {
         const batch = writeBatch(db);
         quests.forEach(q => {
           batch.update(doc(db, 'families', userAccount.familyId!, 'children', selectedChildId!, 'quests', q.id), { completed: false, completedAt: null });
         });
         await batch.commit();
-        showAlert('준비 완료', '모든 퀘스트가 초기화되었습니다. 내일도 화이팅!');
+        showAlert('준비 완료', '내일을 위한 새로운 시작이에요. 우리 아이를 응원해주세요!');
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, `families/${userAccount.familyId}/children/${selectedChildId}/quests`);
       }
@@ -566,7 +566,7 @@ export default function App() {
 
     showConfirm(
       '아이 삭제 확인',
-      `${childName} 아이의 모든 데이터(포인트, 퀘스트 등)가 영구적으로 삭제됩니다. 정말 삭제할까요?`,
+      `${childName} 아이의 모든 기록(약속, 성장 포인트, 일기 등)이 영구적으로 삭제됩니다. 정말 삭제할까요?`,
       performDelete
     );
   };
@@ -617,7 +617,8 @@ export default function App() {
               </h1>
               <p className="text-xl text-slate-400 font-medium max-w-lg leading-relaxed">
                 아이들의 성취를 기록하고, 가족의 유대감을 강화하세요. <br />
-                가장 진보된 패밀리 퀘스트 플랫폼, KidQuest.
+                부모와 아이가 함께 약속을 세우고 매일 실천하며,
+                작은 성취를 평생의 힘으로 키워가는 가족 습관 동반자, 아이퀘스트.
               </p>
             </motion.div>
 
@@ -827,7 +828,7 @@ export default function App() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="text-2xl font-black tracking-tight">부모님 확인</h2>
-                  <p className="text-slate-500 text-sm font-bold">퀘스트를 관리하려면 비밀번호를 입력하세요.<br/>(기본: 1234)</p>
+                  <p className="text-slate-500 text-sm font-bold">우리 아이의 약속과 성장을 관리하려면<br/>비밀번호를 입력하세요. (기본: 1234)</p>
                 </div>
                 <form 
                   onSubmit={(e) => {
@@ -994,7 +995,7 @@ export default function App() {
             )}
           >
             <Trophy size={28} className="md:w-8 md:h-8" />
-            <span className="text-[10px] md:text-xs font-black">퀘스트</span>
+            <span className="text-[10px] md:text-xs font-black">오늘 약속</span>
           </button>
           <button
             onClick={() => {

@@ -118,7 +118,7 @@ export function PrivacyConsentModal({
                   onExpand={() => setExpanded(expanded === 'privacy' ? null : 'privacy')}
                   details={
                     <div className="space-y-2 text-[11px] font-medium text-slate-600 leading-relaxed">
-                      <p><b>수집 항목</b>: 이메일, 이름, 프로필 사진, 가족·자녀 정보, 퀘스트·포인트 기록</p>
+                      <p><b>수집 항목</b>: 이메일, 이름, 프로필 사진, 가족·자녀 정보, 약속 실천 및 성장 포인트 기록</p>
                       <p><b>수집 목적</b>: 서비스 제공, 가족 계정 관리, 자녀 활동 기록 저장</p>
                       <p><b>보유 기간</b>: 회원 탈퇴 시까지 (관련 법령에 따라 필요한 경우 해당 기간)</p>
                       <p><b>제3자 제공</b>: 제공하지 않습니다. 단, 인증 및 데이터 저장을 위해 Google Firebase를 이용합니다.</p>
@@ -140,7 +140,7 @@ export function PrivacyConsentModal({
                   details={
                     <div className="space-y-2 text-[11px] font-medium text-slate-600 leading-relaxed">
                       <p><b>서비스명</b>: 아이퀘스트 (KidQuest)</p>
-                      <p><b>서비스 내용</b>: 자녀의 습관 형성을 돕는 게임형 퀘스트 관리 서비스</p>
+                      <p><b>서비스 내용</b>: 부모와 아이가 함께 약속을 세우고 매일 실천하며, 작은 성취를 통해 건강한 습관을 형성하도록 돕는 가족 동반자 서비스</p>
                       <p><b>이용자 의무</b>: 타인의 개인정보를 무단 수집·이용·제공하지 않아야 합니다.</p>
                       <p><b>면책</b>: 천재지변, 서비스 장애 등 불가항력으로 인한 서비스 중단에 대해 책임지지 않습니다.</p>
                       <p><b>운영자</b>: 아이퀘스트 (문의: kidquest@example.com)</p>

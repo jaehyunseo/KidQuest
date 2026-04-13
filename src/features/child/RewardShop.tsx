@@ -13,7 +13,7 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="font-black text-2xl text-slate-800">보상 상점</h2>
+        <h2 className="font-black text-2xl text-slate-800">보물 상점</h2>
         <div className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-sm font-black flex items-center gap-1">
           <Star size={14} fill="currentColor" />
           {profile.totalPoints.toLocaleString()} P

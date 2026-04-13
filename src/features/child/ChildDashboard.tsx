@@ -64,7 +64,7 @@ export function ChildDashboard({
       {/* Quest List */}
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <h2 className="font-black text-xl text-slate-800">오늘의 퀘스트</h2>
+          <h2 className="font-black text-xl text-slate-800">오늘의 도전</h2>
           <span className="text-xs font-bold text-slate-400">
             {quests.filter(q => q.completed).length} / {quests.length} 완료
           </span>

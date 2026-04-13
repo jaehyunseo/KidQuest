@@ -4,4 +4,4 @@
  * login, every user whose stored consentVersion is lower than this
  * will be re-prompted to agree.
  */
-export const CURRENT_CONSENT_VERSION = 1;
+export const CURRENT_CONSENT_VERSION = 2;

@@ -39,8 +39,8 @@ export function QuestQuickAdd({ onAdd }: QuestQuickAddProps) {
             <Plus size={20} />
           </div>
           <div>
-            <h3 className="font-black text-lg text-slate-800">퀘스트 추가</h3>
-            <p className="text-[10px] font-bold text-slate-400">자주 쓰는 것은 한 번에 추가하세요</p>
+            <h3 className="font-black text-lg text-slate-800">함께할 약속 만들기</h3>
+            <p className="text-[10px] font-bold text-slate-400">자주 쓰는 약속은 한 번에 추가하세요</p>
           </div>
         </div>
         <button
@@ -152,7 +152,7 @@ export function QuestQuickAdd({ onAdd }: QuestQuickAddProps) {
               type="submit"
               className="w-full bg-yellow-400 hover:bg-yellow-500 text-slate-900 font-black py-4 rounded-2xl shadow-lg shadow-yellow-100 transition-all active:scale-[0.98]"
             >
-              퀘스트 등록하기
+              약속 만들기
             </button>
           </motion.form>
         )}
