@@ -1,5 +1,7 @@
-import { Camera, Gift, Sparkles, Smartphone } from 'lucide-react';
+import { Camera, Gift, Sparkles, Smartphone, Flame, Award } from 'lucide-react';
 import type { Reward, UserProfile } from '../../types';
+import { ACHIEVEMENTS } from '../../lib/achievements';
+import { cn } from '../../lib/utils';
 
 interface ProfileViewProps {
   profile: UserProfile;
@@ -10,6 +12,7 @@ export function ProfileView({ profile, rewards }: ProfileViewProps) {
   const inventoryItems = profile.inventory
     .map(id => rewards.find(r => r.id === id))
     .filter(Boolean) as Reward[];
+  const unlockedIds = new Set(profile.achievements ?? []);
 
   return (
     <div className="space-y-8">
@@ -36,6 +39,67 @@ export function ProfileView({ profile, rewards }: ProfileViewProps) {
         <div className="bg-white p-4 rounded-3xl border border-slate-100 text-center">
           <p className="text-[10px] font-bold text-slate-400 uppercase">보유 보상</p>
           <p className="text-xl font-black text-slate-800 mt-1">{profile.inventory.length}개</p>
+        </div>
+        <div className="bg-gradient-to-br from-orange-400 to-red-500 p-4 rounded-3xl text-white text-center">
+          <p className="text-[10px] font-bold text-orange-100 uppercase flex items-center justify-center gap-1">
+            <Flame size={11} /> 연속 달성
+          </p>
+          <p className="text-xl font-black mt-1">{profile.streak ?? 0}일</p>
+          <p className="text-[9px] font-bold text-orange-100 mt-0.5">
+            최고 {profile.longestStreak ?? 0}일
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-purple-400 to-blue-500 p-4 rounded-3xl text-white text-center">
+          <p className="text-[10px] font-bold text-purple-100 uppercase flex items-center justify-center gap-1">
+            <Award size={11} /> 배지
+          </p>
+          <p className="text-xl font-black mt-1">
+            {unlockedIds.size} / {ACHIEVEMENTS.length}
+          </p>
+          <p className="text-[9px] font-bold text-purple-100 mt-0.5">
+            완료 {profile.totalCompleted ?? 0}개
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <h3 className="font-black text-lg text-slate-800 flex items-center gap-2">
+          <Award size={20} className="text-purple-500" />
+          나의 배지
+        </h3>
+        <div className="grid grid-cols-3 gap-3">
+          {ACHIEVEMENTS.map((a) => {
+            const unlocked = unlockedIds.has(a.id);
+            return (
+              <div
+                key={a.id}
+                className={cn(
+                  'relative rounded-2xl p-3 text-center border transition-all',
+                  unlocked
+                    ? `bg-gradient-to-br ${a.color} text-white border-transparent shadow-md`
+                    : 'bg-slate-50 border-slate-100 text-slate-300'
+                )}
+                title={a.description}
+              >
+                <div
+                  className={cn(
+                    'text-3xl mb-1',
+                    !unlocked && 'grayscale opacity-40'
+                  )}
+                >
+                  {a.icon}
+                </div>
+                <p className={cn('text-[10px] font-black leading-tight', !unlocked && 'text-slate-400')}>
+                  {a.title}
+                </p>
+                {!unlocked && (
+                  <p className="text-[8px] font-bold text-slate-300 mt-0.5 leading-tight">
+                    잠김
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 

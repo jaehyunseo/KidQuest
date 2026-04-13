@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Trophy, Sparkles, CheckCircle2, Circle } from 'lucide-react';
+import { Trophy, Sparkles, CheckCircle2, Circle, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { type CustomCategory, type Quest, type UserProfile } from '../../types';
 import { cn } from '../../lib/utils';
@@ -41,6 +41,14 @@ export function ChildDashboard({
             <span className="text-5xl font-black tracking-tighter">{profile.totalPoints.toLocaleString()}</span>
             <span className="text-xl font-bold opacity-80">P</span>
           </div>
+          {(profile.streak ?? 0) > 0 && (
+            <div className="mt-3 inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1">
+              <Flame size={14} className="text-white" />
+              <span className="text-xs font-black">
+                {profile.streak}일 연속 약속 지키기 🔥
+              </span>
+            </div>
+          )}
         </div>
         <Trophy className="absolute -right-4 -bottom-4 w-32 h-32 text-white/20 rotate-12" />
       </motion.div>

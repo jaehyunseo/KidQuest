@@ -29,6 +29,13 @@ import { useRewards } from './hooks/useRewards';
 import { useCategories } from './hooks/useCategories';
 import { uploadChildAvatar, deleteChildAvatar } from './lib/storage';
 import { sha256 } from './lib/hash';
+import {
+  ACHIEVEMENTS,
+  evaluateNewBadges,
+  localDateKey,
+  nextStreak,
+  profileStats,
+} from './lib/achievements';
 import { PrivacyConsentModal, type ConsentResult } from './features/auth/PrivacyConsentModal';
 import { CURRENT_CONSENT_VERSION } from './features/auth/consent';
 import { SOUNDS, playSound } from './lib/sound';
@@ -219,18 +226,50 @@ export default function App() {
     if (newCompleted) {
       playSound(SOUNDS.SUCCESS);
       const batch = writeBatch(db);
-      
+
+      // Streak bookkeeping
+      const today = localDateKey();
+      const { streak: newStreak, touched } = nextStreak(
+        profile.streak,
+        profile.lastCompletedDate,
+        today
+      );
+      const longest = Math.max(profile.longestStreak ?? 0, newStreak);
+      const newTotalCompleted = (profile.totalCompleted ?? 0) + 1;
+      const newTotalPoints = profile.totalPoints + quest.points;
+
+      // Evaluate newly-unlocked achievements against the *post-update* stats
+      const already = profile.achievements ?? [];
+      const newBadges = evaluateNewBadges(
+        {
+          totalCompleted: newTotalCompleted,
+          streak: newStreak,
+          longestStreak: longest,
+          rewardsRedeemed: profile.inventory.length,
+          totalPoints: newTotalPoints,
+        },
+        already
+      );
+      const mergedAchievements = newBadges.length
+        ? [...already, ...newBadges]
+        : already;
+
       // Update Quest
-      batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), { 
-        completed: true, 
-        completedAt: new Date().toISOString() 
+      batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), {
+        completed: true,
+        completedAt: new Date().toISOString()
       });
-      
-      // Update Profile Points
+
+      // Update Profile: points + streak + achievements
       batch.update(doc(db, 'families', familyId, 'children', childId), {
-        totalPoints: profile.totalPoints + quest.points
+        totalPoints: newTotalPoints,
+        totalCompleted: newTotalCompleted,
+        streak: newStreak,
+        longestStreak: longest,
+        lastCompletedDate: touched ? today : (profile.lastCompletedDate ?? today),
+        achievements: mergedAchievements,
       });
- 
+
       // Add History
       const historyRef = doc(collection(db, 'families', familyId, 'children', childId, 'history'));
       batch.set(historyRef, {
@@ -253,6 +292,24 @@ export default function App() {
         origin: { y: 0.6 },
         colors: ['#FFD700', '#FFA500', '#FF4500']
       });
+
+      // Celebrate newly-unlocked badges
+      if (newBadges.length) {
+        const names = newBadges
+          .map((id) => ACHIEVEMENTS.find((a) => a.id === id))
+          .filter(Boolean)
+          .map((a) => `${a!.icon} ${a!.title}`)
+          .join('\n');
+        setTimeout(() => {
+          confetti({
+            particleCount: 200,
+            spread: 120,
+            origin: { y: 0.5 },
+            colors: ['#FFD700', '#FF69B4', '#8B5CF6', '#3B82F6'],
+          });
+          showAlert('새 배지를 획득했어요!', names);
+        }, 400);
+      }
     } else {
       playSound(SOUNDS.CLICK);
       const batch = writeBatch(db);
@@ -328,10 +385,27 @@ export default function App() {
         const familyId = userAccount.familyId!;
         const childId = selectedChildId!;
         
+        // Evaluate badges for reward redemption path
+        const newInventory = [...profile.inventory, reward.id];
+        const newRedeemedCount = newInventory.length;
+        const already = profile.achievements ?? [];
+        const newBadges = evaluateNewBadges(
+          {
+            totalCompleted: profile.totalCompleted ?? 0,
+            streak: profile.streak ?? 0,
+            longestStreak: profile.longestStreak ?? 0,
+            rewardsRedeemed: newRedeemedCount,
+            totalPoints: profile.totalPoints - reward.points,
+          },
+          already
+        );
+        const mergedAchievements = newBadges.length ? [...already, ...newBadges] : already;
+
         // Update Profile
         batch.update(doc(db, 'families', familyId, 'children', childId), {
           totalPoints: profile.totalPoints - reward.points,
-          inventory: [...profile.inventory, reward.id]
+          inventory: newInventory,
+          achievements: mergedAchievements,
         });
 
         // Add History Record
@@ -428,9 +502,18 @@ export default function App() {
         inviteCode,
         createdAt: new Date().toISOString(),
         members: { [user.uid]: 'parent' },
-        parentPasswordHash: defaultPasswordHash,
       };
       await setDoc(familyRef, newFamily);
+      // Parent password hash lives in a parent-only private subdoc so it
+      // is NOT exposed via the join-by-invite-code read of the family doc.
+      try {
+        await setDoc(
+          doc(db, 'families', inviteCode, 'private', 'config'),
+          { parentPasswordHash: defaultPasswordHash, updatedAt: new Date().toISOString() }
+        );
+      } catch (secretErr) {
+        console.warn('Failed to seed private config:', secretErr);
+      }
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, { familyId: inviteCode });
 
@@ -563,15 +646,22 @@ export default function App() {
   };
 
   // ===== Parent Password =====
+  // Hash is stored in families/{id}/private/config, readable only by parents.
   const verifyParentPassword = async (input: string): Promise<boolean> => {
+    if (!userAccount?.familyId) return false;
     const inputHash = await sha256(input);
-    const stored = family?.parentPasswordHash;
-    if (!stored) {
-      // Fallback for legacy families that pre-date the hash field
-      const defaultHash = await sha256('1234');
-      return inputHash === defaultHash;
+    try {
+      const snap = await getDoc(doc(db, 'families', userAccount.familyId, 'private', 'config'));
+      const stored = snap.exists() ? (snap.data() as any)?.parentPasswordHash : undefined;
+      if (!stored) {
+        // Legacy / unseeded — fall back to default '1234'
+        const defaultHash = await sha256('1234');
+        return inputHash === defaultHash;
+      }
+      return inputHash === stored;
+    } catch {
+      return false;
     }
-    return inputHash === stored;
   };
 
   const changeParentPassword = async (
@@ -583,12 +673,14 @@ export default function App() {
     if (!ok) return { ok: false, error: '현재 비밀번호가 올바르지 않아요' };
     try {
       const nextHash = await sha256(next);
-      await updateDoc(doc(db, 'families', userAccount.familyId), {
-        parentPasswordHash: nextHash,
-      });
+      await setDoc(
+        doc(db, 'families', userAccount.familyId, 'private', 'config'),
+        { parentPasswordHash: nextHash, updatedAt: new Date().toISOString() },
+        { merge: true }
+      );
       return { ok: true };
     } catch (error: any) {
-      handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}`);
+      handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}/private/config`);
       return { ok: false, error: error?.message || '저장 중 오류가 발생했어요' };
     }
   };

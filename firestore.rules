@@ -1,45 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Document ID: {userId} (Firebase Auth UID)
-    // Fields:
-    //   - uid: string (required) - Firebase Auth UID
-    //   - name: string (required) - User's display name
-    //   - email: string (required) - User's email address
-    //   - role: string (required, enum: ['parent', 'child']) - Role of the user
-    //   - familyId: string (optional) - ID of the family this user belongs to
-    //
-    // Collection: families
-    // Document ID: {familyId}
-    // Fields:
-    //   - name: string (required)
-    //   - inviteCode: string (required)
-    //   - createdAt: string (required, ISO 8601)
-    //   - members: map (required) - Map of {uid: role}
-    //
-    // Collection: families/{familyId}/children
-    // Document ID: {childId}
-    // Fields:
-    //   - name: string (required)
-    //   - avatar: string (required)
-    //   - totalPoints: number (required)
-    //   - level: number (required)
-    //   - inventory: list (required)
-    //
-    // Subcollections: quests, history
-    //
-    // ===============================================================
 
     // ===============================================================
     // Helper Functions
     // ===============================================================
-    
+
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -63,7 +29,7 @@ service cloud.firestore {
       let userData = getUserData();
       return isAuthenticated() && (
         (userData != null && userData.familyId == familyId) ||
-        (exists(/databases/$(database)/documents/families/$(familyId)) && 
+        (exists(/databases/$(database)/documents/families/$(familyId)) &&
          request.auth.uid in get(/databases/$(database)/documents/families/$(familyId)).data.members)
       );
     }
@@ -85,33 +51,100 @@ service cloud.firestore {
              data.email is string && data.email.size() > 0;
     }
 
+    // An update is "role-preserving" if it does NOT change the role field.
+    // Used to prevent privilege escalation via self-update.
+    function rolePreserving() {
+      return !('role' in request.resource.data.diff(resource.data).affectedKeys()) ||
+             request.resource.data.role == resource.data.role;
+    }
+
     // ===============================================================
-    // Rules
+    // Users
     // ===============================================================
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      allow update: if (isOwner(userId) && isValidUser(request.resource.data)) || isAdmin();
+      // Self-updates allowed but role field is frozen (admins can still override).
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && rolePreserving()) || isAdmin();
+      allow delete: if isAdmin();
     }
 
-    match /families/{familyId} {
-      allow read: if isAuthenticated(); // Broad read for joining
-      allow create: if isAuthenticated();
-      allow update: if isParentOfFamily(familyId) || isAdmin() || 
-                    (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']));
+    // ===============================================================
+    // Families
+    // ===============================================================
 
+    match /families/{familyId} {
+      // Family doc is readable by any authenticated user so the "join by
+      // invite code" flow (which reads families/{inviteCode}) still works.
+      // Sensitive material (parent password hash) must NOT live on this doc —
+      // it belongs under /private/config below.
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      // Parents can update their family doc; any authed user can append
+      // themselves to `members` (used by join flow).
+      allow update: if isParentOfFamily(familyId) || isAdmin() ||
+                    (isAuthenticated() &&
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']));
+      allow delete: if isAdmin();
+
+      // -----------------------------------------------------------
+      // Private config (parent password hash, secrets) — parents only
+      // -----------------------------------------------------------
+      match /private/{docId} {
+        allow read, write: if isParentOfFamily(familyId) || isAdmin();
+      }
+
+      // -----------------------------------------------------------
+      // Shared catalogs — rewards, categories
+      // Members can read; only parents can write.
+      // -----------------------------------------------------------
+      match /rewards/{rewardId} {
+        allow read: if isFamilyMember(familyId) || isAdmin();
+        allow write: if isParentOfFamily(familyId) || isAdmin();
+      }
+
+      match /categories/{categoryId} {
+        allow read: if isFamilyMember(familyId) || isAdmin();
+        allow write: if isParentOfFamily(familyId) || isAdmin();
+      }
+
+      // -----------------------------------------------------------
+      // Children
+      // -----------------------------------------------------------
       match /children/{childId} {
         allow read: if isFamilyMember(familyId) || isAdmin();
         allow write: if isFamilyMember(familyId) || isAdmin();
 
-        match /{allSubcollections=**} {
+        // Quests: parents manage; non-parent family members (children) may
+        // only toggle `completed` / `completedAt` / streak bookkeeping.
+        match /quests/{questId} {
+          allow read: if isFamilyMember(familyId) || isAdmin();
+          allow create, delete: if isParentOfFamily(familyId) || isAdmin();
+          allow update: if isParentOfFamily(familyId) || isAdmin() ||
+            (isFamilyMember(familyId) &&
+             request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['completed', 'completedAt']));
+        }
+
+        // History is written on quest toggle / reward purchase — any family
+        // member can read/write their own child's history.
+        match /history/{historyId} {
           allow read, write: if isFamilyMember(familyId) || isAdmin();
+        }
+
+        // Achievements unlocked per child — family members can read; writes
+        // happen via the app after unlock events.
+        match /achievements/{achievementId} {
+          allow read: if isFamilyMember(familyId) || isAdmin();
+          allow write: if isFamilyMember(familyId) || isAdmin();
         }
       }
     }
-    
+
+    // ===============================================================
     // Default deny
+    // ===============================================================
     match /{allPaths=**} {
       allow read, write: if false;
     }

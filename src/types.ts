@@ -34,7 +34,8 @@ export interface Family {
   inviteCode: string;
   createdAt: string;
   members: Record<string, 'parent' | 'child'>; // uid -> role
-  parentPasswordHash?: string; // SHA-256 hex; default = sha256('1234')
+  // NOTE: parentPasswordHash used to live here but is now stored in
+  // /families/{id}/private/config, only readable by parent members.
 }
 
 export interface CustomCategory {
@@ -53,6 +54,12 @@ export interface ChildProfile {
   totalPoints: number;
   level: number;
   inventory: string[];
+  // Streak / achievements (added in RBAC+Streak round)
+  streak?: number;          // current consecutive-day streak
+  longestStreak?: number;   // best all-time streak
+  lastCompletedDate?: string; // YYYY-MM-DD of last quest completion
+  totalCompleted?: number;  // lifetime completed-quest count
+  achievements?: string[];  // unlocked badge IDs
 }
 
 export interface UserProfile {
@@ -65,6 +72,11 @@ export interface UserProfile {
   avatar: string;
   avatarUrl?: string;
   inventory: string[]; // IDs of purchased rewards
+  streak?: number;
+  longestStreak?: number;
+  lastCompletedDate?: string;
+  totalCompleted?: number;
+  achievements?: string[];
 }
 
 export interface Reward {
