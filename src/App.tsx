@@ -735,24 +735,28 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <ParentDashboard 
-              quests={quests} 
-              onAdd={addQuest} 
-              onDelete={deleteQuest} 
+            <ParentDashboard
+              quests={quests}
+              onAdd={addQuest}
+              onDelete={deleteQuest}
               onReset={resetDaily}
               onFullReset={fullReset}
               onPointReset={resetPoints}
               profile={profile}
-              setProfile={async (p: any) => {
-                if (typeof p === 'function') {
-                  const newP = p(profile);
-                  if (userAccount?.familyId && selectedChildId) {
-                    try {
-                      await updateDoc(doc(db, 'families', userAccount.familyId, 'children', selectedChildId), { name: newP.name });
-                    } catch (error) {
-                      handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}/children/${selectedChildId}`);
-                    }
-                  }
+              onUpdateChildField={async (updates) => {
+                if (!userAccount?.familyId || !selectedChildId) return;
+                setProfile((p: UserProfile) => ({ ...p, ...updates }));
+                try {
+                  await updateDoc(
+                    doc(db, 'families', userAccount.familyId, 'children', selectedChildId),
+                    updates
+                  );
+                } catch (error) {
+                  handleFirestoreError(
+                    error,
+                    OperationType.UPDATE,
+                    `families/${userAccount.familyId}/children/${selectedChildId}`
+                  );
                 }
               }}
               onExit={() => {
@@ -771,27 +775,33 @@ export default function App() {
           )
         ) : (
           <AnimatePresence mode="wait">
-            {viewMode === 'quests' && (
+            {(viewMode === 'quests' || viewMode === 'calendar') && (
               <motion.div
-                key="quests"
+                key="quests-calendar"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
+                className="lg:grid lg:grid-cols-10 lg:gap-6"
               >
-                <ChildDashboard 
-                  quests={quests} 
-                  onToggle={(id) => {
-                    playSound(SOUNDS.CLICK);
-                    toggleQuest(id);
-                  }} 
-                  profile={profile}
-                  encouragement={encouragement}
-                  isLoadingAI={isLoadingAI}
-                  onRefreshAI={() => {
-                    playSound(SOUNDS.CLICK);
-                    generateEncouragement();
-                  }}
-                />
+                <div className={cn("lg:col-span-6", viewMode === 'calendar' && "hidden lg:block")}>
+                  <ChildDashboard
+                    quests={quests}
+                    onToggle={(id) => {
+                      playSound(SOUNDS.CLICK);
+                      toggleQuest(id);
+                    }}
+                    profile={profile}
+                    encouragement={encouragement}
+                    isLoadingAI={isLoadingAI}
+                    onRefreshAI={() => {
+                      playSound(SOUNDS.CLICK);
+                      generateEncouragement();
+                    }}
+                  />
+                </div>
+                <div className={cn("lg:col-span-4 mt-6 lg:mt-0", viewMode === 'quests' && "hidden lg:block")}>
+                  <CalendarView history={history} />
+                </div>
               </motion.div>
             )}
             {viewMode === 'shop' && (
@@ -801,13 +811,13 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
               >
-                <RewardShop 
-                  rewards={rewards} 
-                  profile={profile} 
+                <RewardShop
+                  rewards={rewards}
+                  profile={profile}
                   onPurchase={(reward) => {
                     playSound(SOUNDS.CLICK);
                     purchaseReward(reward);
-                  }} 
+                  }}
                 />
               </motion.div>
             )}
@@ -818,20 +828,10 @@ export default function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
               >
-                <ProfileView 
-                  profile={profile} 
+                <ProfileView
+                  profile={profile}
                   rewards={rewards}
                 />
-              </motion.div>
-            )}
-            {viewMode === 'calendar' && (
-              <motion.div
-                key="calendar"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-              >
-                <CalendarView history={history} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -854,13 +854,13 @@ export default function App() {
             <Trophy size={28} className="md:w-8 md:h-8" />
             <span className="text-[10px] md:text-xs font-black">퀘스트</span>
           </button>
-          <button 
+          <button
             onClick={() => {
               playSound(SOUNDS.CLICK);
               setViewMode('calendar');
             }}
             className={cn(
-              "flex flex-col items-center gap-1 transition-all hover:scale-110",
+              "flex flex-col items-center gap-1 transition-all hover:scale-110 lg:hidden",
               viewMode === 'calendar' ? "text-yellow-500" : "text-slate-400"
             )}
           >

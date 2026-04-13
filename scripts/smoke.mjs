@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 
-const URL = 'http://127.0.0.1:5174/';
+const URL = process.env.SMOKE_URL || 'http://localhost:5174/';
 const errors = [];
 const warnings = [];
 
