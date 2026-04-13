@@ -1,24 +1,27 @@
 import React, { useState } from 'react';
 import { Plus, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CATEGORY_LABELS, CATEGORY_COLORS, type QuestCategory } from '../../../types';
+import { CATEGORY_LABELS, type CustomCategory, type QuestCategory } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { CategoryIcon } from '../../../components/CategoryIcon';
+import { resolveCategory } from '../../../lib/categoryDisplay';
 import { QUEST_PRESETS } from '../constants';
 
 interface QuestQuickAddProps {
-  onAdd: (title: string, points: number, category: QuestCategory) => void;
+  onAdd: (title: string, points: number, category: QuestCategory | string) => void;
+  customCategories: CustomCategory[];
 }
 
-const CATEGORIES: Array<QuestCategory | 'all'> = ['all', 'homework', 'chore', 'habit', 'other'];
+const BUILTIN_FILTERS: Array<QuestCategory | 'all'> = ['all', 'homework', 'chore', 'habit', 'other'];
 
-export function QuestQuickAdd({ onAdd }: QuestQuickAddProps) {
-  const [filter, setFilter] = useState<QuestCategory | 'all'>('all');
+export function QuestQuickAdd({ onAdd, customCategories }: QuestQuickAddProps) {
+  const [filter, setFilter] = useState<string>('all');
   const [showFullForm, setShowFullForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newPoints, setNewPoints] = useState<number | string>(10);
-  const [newCategory, setNewCategory] = useState<QuestCategory>('homework');
+  const [newCategory, setNewCategory] = useState<string>('homework');
 
+  const allFilters: string[] = [...BUILTIN_FILTERS, ...customCategories.map((c) => c.id)];
   const filteredPresets =
     filter === 'all' ? QUEST_PRESETS : QUEST_PRESETS.filter((p) => p.category === filter);
 
@@ -61,43 +64,56 @@ export function QuestQuickAdd({ onAdd }: QuestQuickAddProps) {
             className="space-y-3"
           >
             <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-1">
-              {CATEGORIES.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => setFilter(c)}
-                  className={cn(
-                    'flex-shrink-0 px-4 py-1.5 rounded-full text-[11px] font-black transition-all',
-                    filter === c
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                  )}
-                >
-                  {c === 'all' ? '전체' : CATEGORY_LABELS[c]}
-                </button>
-              ))}
+              {allFilters.map((c) => {
+                const label =
+                  c === 'all'
+                    ? '전체'
+                    : resolveCategory(c, customCategories).label;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => setFilter(c)}
+                    className={cn(
+                      'flex-shrink-0 px-4 py-1.5 rounded-full text-[11px] font-black transition-all',
+                      filter === c
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    )}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {filteredPresets.map((p, i) => (
-                <button
-                  key={`${p.title}-${i}`}
-                  onClick={() => onAdd(p.title, p.points, p.category)}
-                  className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 hover:bg-yellow-50 border border-slate-200 hover:border-yellow-300 rounded-xl transition-all active:scale-95 text-left"
-                >
-                  <div
-                    className={cn(
-                      'w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0',
-                      CATEGORY_COLORS[p.category]
-                    )}
+              {filteredPresets.map((p, i) => {
+                const cat = resolveCategory(p.category, customCategories);
+                return (
+                  <button
+                    key={`${p.title}-${i}`}
+                    onClick={() => onAdd(p.title, p.points, p.category)}
+                    className="flex items-center gap-2 px-3 py-2.5 bg-slate-50 hover:bg-yellow-50 border border-slate-200 hover:border-yellow-300 rounded-xl transition-all active:scale-95 text-left"
                   >
-                    <CategoryIcon category={p.category} size={14} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-black text-slate-800 truncate">{p.title}</p>
-                    <p className="text-[10px] font-bold text-orange-500">+{p.points}P</p>
-                  </div>
-                </button>
-              ))}
+                    <div
+                      className={cn(
+                        'w-7 h-7 rounded-lg flex items-center justify-center text-white shrink-0',
+                        cat.color
+                      )}
+                    >
+                      <CategoryIcon
+                        category={p.category}
+                        size={14}
+                        customCategories={customCategories}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-black text-slate-800 truncate">{p.title}</p>
+                      <p className="text-[10px] font-bold text-orange-500">+{p.points}P</p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </motion.div>
         ) : (
@@ -133,12 +149,17 @@ export function QuestQuickAdd({ onAdd }: QuestQuickAddProps) {
               <div className="relative">
                 <select
                   value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value as QuestCategory)}
+                  onChange={(e) => setNewCategory(e.target.value)}
                   className="w-full border-2 border-slate-100 rounded-2xl px-5 py-4 focus:border-yellow-400 outline-none transition-all font-bold appearance-none bg-slate-50/50"
                 >
                   {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
                     <option key={val} value={val}>
                       {label}
+                    </option>
+                  ))}
+                  {customCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.icon} {c.label}
                     </option>
                   ))}
                 </select>

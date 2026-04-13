@@ -2,16 +2,17 @@ import React, { useRef, useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  CATEGORY_COLORS,
-  CATEGORY_LABELS,
   type ChildProfile,
+  type CustomCategory,
   type Family,
   type Quest,
   type QuestCategory,
+  type Reward,
   type UserProfile,
 } from '../../types';
 import { cn } from '../../lib/utils';
 import { CategoryIcon } from '../../components/CategoryIcon';
+import { resolveCategory } from '../../lib/categoryDisplay';
 import { TopBar } from './components/TopBar';
 import { ChildRail } from './components/ChildRail';
 import { ChildSummaryWidget } from './components/ChildSummaryWidget';
@@ -19,6 +20,8 @@ import { QuestQuickAdd } from './components/QuestQuickAdd';
 import { FamilySettingsDrawer } from './components/FamilySettingsDrawer';
 import { UndoToast } from './components/UndoToast';
 import { OnboardingBanner } from './components/OnboardingBanner';
+import { RewardManager } from './components/RewardManager';
+import { CategoryManager } from './components/CategoryManager';
 import { AVATAR_OPTIONS } from './constants';
 
 interface ParentDashboardProps {
@@ -43,6 +46,17 @@ interface ParentDashboardProps {
   showAlert: (title: string, message: string) => void;
   showOnboarding: boolean;
   onDismissOnboarding: () => void;
+  // Rewards
+  rewards: Reward[];
+  onAddReward: (data: Omit<Reward, 'id'>) => Promise<void>;
+  onUpdateReward: (id: string, updates: Partial<Omit<Reward, 'id'>>) => Promise<void>;
+  onDeleteReward: (id: string) => Promise<void>;
+  // Custom categories
+  customCategories: CustomCategory[];
+  onAddCategory: (data: { label: string; color: string; icon: string }) => Promise<void>;
+  onDeleteCategory: (id: string) => Promise<void>;
+  // Parent password
+  onChangePassword: (current: string, next: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export function ParentDashboard(props: ParentDashboardProps) {
@@ -68,6 +82,14 @@ export function ParentDashboard(props: ParentDashboardProps) {
     showAlert,
     showOnboarding,
     onDismissOnboarding,
+    rewards,
+    onAddReward,
+    onUpdateReward,
+    onDeleteReward,
+    customCategories,
+    onAddCategory,
+    onDeleteCategory,
+    onChangePassword,
   } = props;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -136,8 +158,25 @@ export function ParentDashboard(props: ParentDashboardProps) {
             {hasSelectedChild ? (
               <>
                 <ChildSummaryWidget profile={profile} quests={quests} />
-                <QuestQuickAdd onAdd={onAdd} />
-                <QuestList quests={quests} onDelete={handleDeleteQuest} />
+                <QuestQuickAdd onAdd={onAdd} customCategories={customCategories} />
+                <QuestList
+                  quests={quests}
+                  customCategories={customCategories}
+                  onDelete={handleDeleteQuest}
+                />
+                <RewardManager
+                  rewards={rewards}
+                  onAdd={onAddReward}
+                  onUpdate={onUpdateReward}
+                  onDelete={onDeleteReward}
+                />
+                <CategoryManager
+                  customCategories={customCategories}
+                  quests={quests}
+                  onAdd={onAddCategory}
+                  onDelete={onDeleteCategory}
+                  showAlert={showAlert}
+                />
               </>
             ) : (
               <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] p-12 text-center">
@@ -180,6 +219,7 @@ export function ParentDashboard(props: ParentDashboardProps) {
         onFullReset={onFullReset}
         showAlert={showAlert}
         hasSelectedChild={hasSelectedChild}
+        onChangePassword={onChangePassword}
       />
 
       <UndoToast message={undoMessage} onUndo={performUndo} />
@@ -302,9 +342,11 @@ function AddChildModal({
 
 function QuestList({
   quests,
+  customCategories,
   onDelete,
 }: {
   quests: Quest[];
+  customCategories: CustomCategory[];
   onDelete: (q: Quest) => void;
 }) {
   return (
@@ -317,7 +359,9 @@ function QuestList({
       </div>
       <div className="space-y-3">
         {quests.length > 0 ? (
-          quests.map((q) => (
+          quests.map((q) => {
+            const cat = resolveCategory(q.category, customCategories);
+            return (
             <motion.div
               layout
               key={q.id}
@@ -327,10 +371,10 @@ function QuestList({
                 <div
                   className={cn(
                     'w-10 h-10 rounded-xl flex items-center justify-center text-white shadow',
-                    CATEGORY_COLORS[q.category]
+                    cat.color
                   )}
                 >
-                  <CategoryIcon category={q.category} size={18} />
+                  <CategoryIcon category={q.category} size={18} customCategories={customCategories} />
                 </div>
                 <div>
                   <p className="font-black text-slate-800 text-sm leading-tight">{q.title}</p>
@@ -339,7 +383,7 @@ function QuestList({
                       {q.points}P
                     </span>
                     <span className="text-[10px] font-bold text-slate-400">
-                      {CATEGORY_LABELS[q.category]}
+                      {cat.label}
                     </span>
                   </div>
                 </div>
@@ -351,7 +395,8 @@ function QuestList({
                 <Trash2 size={16} />
               </button>
             </motion.div>
-          ))
+            );
+          })
         ) : (
           <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
             <p className="text-slate-400 font-bold text-sm">

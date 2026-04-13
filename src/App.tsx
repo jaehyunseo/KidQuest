@@ -25,7 +25,10 @@ import { OperationType, handleFirestoreError } from './lib/firestoreError';
 import { useAuth } from './hooks/useAuth';
 import { useFamily } from './hooks/useFamily';
 import { useChildData } from './hooks/useChildData';
+import { useRewards } from './hooks/useRewards';
+import { useCategories } from './hooks/useCategories';
 import { uploadChildAvatar, deleteChildAvatar } from './lib/storage';
+import { sha256 } from './lib/hash';
 import { PrivacyConsentModal, type ConsentResult } from './features/auth/PrivacyConsentModal';
 import { CURRENT_CONSENT_VERSION } from './features/auth/consent';
 import { SOUNDS, playSound } from './lib/sound';
@@ -68,6 +71,8 @@ export default function App() {
   const { user, userAccount, isAuthReady } = useAuth();
   const { family, children, selectedChildId, setSelectedChildId } = useFamily(userAccount);
   const { profile, setProfile, quests, history } = useChildData(userAccount?.familyId, selectedChildId);
+  const rewards = useRewards(userAccount?.familyId);
+  const customCategories = useCategories(userAccount?.familyId);
 
   const [isParentMode, setIsParentMode] = useState(false);
   const [parentPassword, setParentPassword] = useState('');
@@ -89,7 +94,6 @@ export default function App() {
     setModal({ isOpen: true, title, message, type: 'confirm', onConfirm });
   };
 
-  const [rewards] = useState<Reward[]>(INITIAL_REWARDS);
   const [encouragement, setEncouragement] = useState<string>('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
@@ -417,12 +421,14 @@ export default function App() {
     try {
       const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const familyRef = doc(db, 'families', inviteCode); // Use inviteCode as ID for easier joining
+      const defaultPasswordHash = await sha256('1234');
       const newFamily: Family = {
         id: inviteCode,
         name,
         inviteCode,
         createdAt: new Date().toISOString(),
-        members: { [user.uid]: 'parent' }
+        members: { [user.uid]: 'parent' },
+        parentPasswordHash: defaultPasswordHash,
       };
       await setDoc(familyRef, newFamily);
       const userRef = doc(db, 'users', user.uid);
@@ -440,6 +446,17 @@ export default function App() {
         } as Omit<ChildProfile, 'id'>);
       } catch (childErr) {
         console.warn('Failed to create default child:', childErr);
+      }
+
+      // Seed default rewards so the shop isn't empty
+      try {
+        const rewardsRef = collection(db, 'families', inviteCode, 'rewards');
+        for (const r of INITIAL_REWARDS) {
+          const { id: _id, ...rest } = r;
+          await addDoc(rewardsRef, rest);
+        }
+      } catch (rewardErr) {
+        console.warn('Failed to seed default rewards:', rewardErr);
       }
 
       // Trigger onboarding banner for first-time parents
@@ -492,6 +509,87 @@ export default function App() {
     }
     if (previousUrl) {
       deleteChildAvatar(previousUrl).catch(() => {});
+    }
+  };
+
+  // ===== Reward CRUD =====
+  const addReward = async (data: Omit<Reward, 'id'>) => {
+    if (!userAccount?.familyId) return;
+    try {
+      await addDoc(collection(db, 'families', userAccount.familyId, 'rewards'), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `families/${userAccount.familyId}/rewards`);
+    }
+  };
+
+  const updateReward = async (id: string, updates: Partial<Omit<Reward, 'id'>>) => {
+    if (!userAccount?.familyId) return;
+    try {
+      await updateDoc(doc(db, 'families', userAccount.familyId, 'rewards', id), updates);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}/rewards/${id}`);
+    }
+  };
+
+  const deleteReward = async (id: string) => {
+    if (!userAccount?.familyId) return;
+    try {
+      await deleteDoc(doc(db, 'families', userAccount.familyId, 'rewards', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `families/${userAccount.familyId}/rewards/${id}`);
+    }
+  };
+
+  // ===== Custom Category CRUD =====
+  const addCustomCategory = async (data: { label: string; color: string; icon: string }) => {
+    if (!userAccount?.familyId) return;
+    try {
+      await addDoc(collection(db, 'families', userAccount.familyId, 'categories'), {
+        ...data,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `families/${userAccount.familyId}/categories`);
+    }
+  };
+
+  const deleteCustomCategory = async (id: string) => {
+    if (!userAccount?.familyId) return;
+    try {
+      await deleteDoc(doc(db, 'families', userAccount.familyId, 'categories', id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `families/${userAccount.familyId}/categories/${id}`);
+    }
+  };
+
+  // ===== Parent Password =====
+  const verifyParentPassword = async (input: string): Promise<boolean> => {
+    const inputHash = await sha256(input);
+    const stored = family?.parentPasswordHash;
+    if (!stored) {
+      // Fallback for legacy families that pre-date the hash field
+      const defaultHash = await sha256('1234');
+      return inputHash === defaultHash;
+    }
+    return inputHash === stored;
+  };
+
+  const changeParentPassword = async (
+    current: string,
+    next: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    if (!userAccount?.familyId || !family) return { ok: false, error: '가족 정보를 찾을 수 없어요' };
+    const ok = await verifyParentPassword(current);
+    if (!ok) return { ok: false, error: '현재 비밀번호가 올바르지 않아요' };
+    try {
+      const nextHash = await sha256(next);
+      await updateDoc(doc(db, 'families', userAccount.familyId), {
+        parentPasswordHash: nextHash,
+      });
+      return { ok: true };
+    } catch (error: any) {
+      handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}`);
+      return { ok: false, error: error?.message || '저장 중 오류가 발생했어요' };
     }
   };
 
@@ -830,24 +928,24 @@ export default function App() {
                   <h2 className="text-2xl font-black tracking-tight">부모님 확인</h2>
                   <p className="text-slate-500 text-sm font-bold">우리 아이의 약속과 성장을 관리하려면<br/>비밀번호를 입력하세요. (기본: 1234)</p>
                 </div>
-                <form 
-                  onSubmit={(e) => {
+                <form
+                  onSubmit={async (e) => {
                     e.preventDefault();
-                    if (parentPassword === '1234') {
+                    const ok = await verifyParentPassword(parentPassword);
+                    if (ok) {
                       playSound(SOUNDS.SUCCESS);
                       setIsParentAuthenticated(true);
                       setParentPassword('');
                     } else {
                       playSound(SOUNDS.ERROR);
-                      showAlert('인증 실패', '비밀번호가 틀렸어요! (힌트: 1234)');
+                      showAlert('인증 실패', '비밀번호가 올바르지 않아요.');
                     }
-                  }} 
+                  }}
                   className="space-y-6"
                 >
-                  <input 
-                    type="password" 
-                    placeholder="••••"
-                    maxLength={4}
+                  <input
+                    type="password"
+                    placeholder="비밀번호 (기본 1234)"
                     value={parentPassword}
                     onChange={(e) => setParentPassword(e.target.value)}
                     className="w-full border-2 border-slate-100 rounded-2xl px-4 py-4 text-center text-3xl tracking-[1em] outline-none focus:border-yellow-400 transition-all bg-slate-50/50 font-black"
@@ -914,6 +1012,14 @@ export default function App() {
               showAlert={showAlert}
               showOnboarding={showOnboarding}
               onDismissOnboarding={dismissOnboarding}
+              rewards={rewards}
+              onAddReward={addReward}
+              onUpdateReward={updateReward}
+              onDeleteReward={deleteReward}
+              customCategories={customCategories}
+              onAddCategory={addCustomCategory}
+              onDeleteCategory={deleteCustomCategory}
+              onChangePassword={changeParentPassword}
             />
           )
         ) : (
@@ -929,6 +1035,7 @@ export default function App() {
                 <div className={cn("lg:col-span-6", viewMode === 'calendar' && "hidden lg:block")}>
                   <ChildDashboard
                     quests={quests}
+                    customCategories={customCategories}
                     onToggle={(id) => {
                       playSound(SOUNDS.CLICK);
                       toggleQuest(id);
@@ -943,7 +1050,7 @@ export default function App() {
                   />
                 </div>
                 <div className={cn("lg:col-span-4 mt-6 lg:mt-0", viewMode === 'quests' && "hidden lg:block")}>
-                  <CalendarView history={history} />
+                  <CalendarView history={history} customCategories={customCategories} />
                 </div>
               </motion.div>
             )}

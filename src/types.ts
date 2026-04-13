@@ -34,6 +34,15 @@ export interface Family {
   inviteCode: string;
   createdAt: string;
   members: Record<string, 'parent' | 'child'>; // uid -> role
+  parentPasswordHash?: string; // SHA-256 hex; default = sha256('1234')
+}
+
+export interface CustomCategory {
+  id: string;
+  label: string;
+  color: string; // tailwind bg-* class, e.g. "bg-pink-500"
+  icon: string;  // emoji
+  createdAt: string;
 }
 
 export interface ChildProfile {

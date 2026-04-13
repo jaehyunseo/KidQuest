@@ -1,15 +1,17 @@
 import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, Gift } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CATEGORY_COLORS, type HistoryRecord } from '../../types';
+import { type CustomCategory, type HistoryRecord } from '../../types';
 import { cn } from '../../lib/utils';
 import { CategoryIcon } from '../../components/CategoryIcon';
+import { resolveCategory } from '../../lib/categoryDisplay';
 
 interface CalendarViewProps {
   history: HistoryRecord[];
+  customCategories: CustomCategory[];
 }
 
-export function CalendarView({ history }: CalendarViewProps) {
+export function CalendarView({ history, customCategories }: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(new Date().toDateString());
 
@@ -136,9 +138,14 @@ export function CalendarView({ history }: CalendarViewProps) {
                           <Gift size={16} />
                         </div>
                       ) : (
-                        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-white", CATEGORY_COLORS[record.category || 'other'])}>
-                          <CategoryIcon category={record.category || 'other'} size={16} />
-                        </div>
+                        (() => {
+                          const cat = resolveCategory(record.category || 'other', customCategories);
+                          return (
+                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-white", cat.color)}>
+                              <CategoryIcon category={record.category || 'other'} size={16} customCategories={customCategories} />
+                            </div>
+                          );
+                        })()
                       )}
                       <div>
                         <p className="font-bold text-slate-800 text-sm">{record.title}</p>

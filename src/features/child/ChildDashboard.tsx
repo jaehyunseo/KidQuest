@@ -1,20 +1,23 @@
 import { useMemo } from 'react';
 import { Trophy, Sparkles, CheckCircle2, Circle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CATEGORY_COLORS, CATEGORY_LABELS, type Quest, type UserProfile } from '../../types';
+import { type CustomCategory, type Quest, type UserProfile } from '../../types';
 import { cn } from '../../lib/utils';
 import { CategoryIcon } from '../../components/CategoryIcon';
+import { resolveCategory } from '../../lib/categoryDisplay';
 
-export function ChildDashboard({ 
-  quests, 
-  onToggle, 
-  profile, 
-  encouragement, 
+export function ChildDashboard({
+  quests,
+  customCategories,
+  onToggle,
+  profile,
+  encouragement,
   isLoadingAI,
-  onRefreshAI 
-}: { 
-  quests: Quest[], 
-  onToggle: (id: string) => void, 
+  onRefreshAI
+}: {
+  quests: Quest[],
+  customCategories: CustomCategory[],
+  onToggle: (id: string) => void,
   profile: UserProfile,
   encouragement: string,
   isLoadingAI: boolean,
@@ -72,7 +75,9 @@ export function ChildDashboard({
         
         <div className="space-y-3">
           <AnimatePresence mode="popLayout">
-            {sortedQuests.map((quest) => (
+            {sortedQuests.map((quest) => {
+              const cat = resolveCategory(quest.category, customCategories);
+              return (
               <motion.button
                 key={quest.id}
                 layout
@@ -82,25 +87,25 @@ export function ChildDashboard({
                 onClick={() => onToggle(quest.id)}
                 className={cn(
                   "w-full flex items-center gap-4 p-4 rounded-2xl border-2 transition-all text-left",
-                  quest.completed 
-                    ? "bg-slate-50 border-slate-100 opacity-60" 
+                  quest.completed
+                    ? "bg-slate-50 border-slate-100 opacity-60"
                     : "bg-white border-white shadow-md hover:border-yellow-200 active:scale-95"
                 )}
               >
                 <div className={cn(
                   "w-12 h-12 rounded-xl flex items-center justify-center shrink-0",
-                  quest.completed ? "bg-slate-200 text-slate-400" : CATEGORY_COLORS[quest.category] + " text-white"
+                  quest.completed ? "bg-slate-200 text-slate-400" : cat.color + " text-white"
                 )}>
-                  <CategoryIcon category={quest.category} />
+                  <CategoryIcon category={quest.category} customCategories={customCategories} />
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className={cn(
                       "text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500",
                       !quest.completed && "bg-white/50"
                     )}>
-                      {CATEGORY_LABELS[quest.category]}
+                      {cat.label}
                     </span>
                     <span className="text-xs font-bold text-orange-500">+{quest.points}P</span>
                   </div>
@@ -119,7 +124,8 @@ export function ChildDashboard({
                   {quest.completed ? <CheckCircle2 size={20} /> : <Circle size={20} />}
                 </div>
               </motion.button>
-            ))}
+              );
+            })}
           </AnimatePresence>
         </div>
       </div>

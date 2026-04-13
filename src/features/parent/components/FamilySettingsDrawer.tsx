@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle, Camera, Upload, Trash2 } from 'lucide-react';
+import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle, KeyRound, Upload, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserProfile, Family } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { AvatarPicker } from './AvatarPicker';
 import { Avatar } from '../../../components/Avatar';
 import { validateImageFile } from '../../../lib/storage';
+import { PasswordChangeForm } from './PasswordChangeForm';
 
 interface FamilySettingsDrawerProps {
   open: boolean;
@@ -22,6 +23,7 @@ interface FamilySettingsDrawerProps {
   onFullReset: () => void;
   showAlert: (title: string, message: string) => void;
   hasSelectedChild: boolean;
+  onChangePassword: (current: string, next: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export function FamilySettingsDrawer({
@@ -39,6 +41,7 @@ export function FamilySettingsDrawer({
   onFullReset,
   showAlert,
   hasSelectedChild,
+  onChangePassword,
 }: FamilySettingsDrawerProps) {
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -275,6 +278,18 @@ export function FamilySettingsDrawer({
                   </div>
                 </section>
               )}
+
+              <section className="space-y-3">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                  <KeyRound size={12} /> 부모 비밀번호
+                </h3>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5">
+                  <p className="text-[10px] font-bold text-slate-400 mb-3">
+                    부모 관리 모드 진입 비밀번호를 변경합니다. 기본값은 1234 입니다.
+                  </p>
+                  <PasswordChangeForm onChange={onChangePassword} showAlert={showAlert} />
+                </div>
+              </section>
 
               {hasSelectedChild && (
                 <section className="space-y-3">
