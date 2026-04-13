@@ -37,9 +37,15 @@ export function useFamily(userAccount: UserAccount | null) {
       (snap) => {
         const childList = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ChildProfile));
         setChildren(childList);
-        if (childList.length > 0 && !selectedChildId) {
-          setSelectedChildId(childList[0].id);
-        }
+        // Use functional updater so we read the *latest* selectedChildId,
+        // not the stale closure value captured when the effect first ran.
+        // Otherwise every subsequent snapshot (e.g. after a quest toggle
+        // updates the child's totalPoints) would reset the selection back
+        // to childList[0].
+        setSelectedChildId((prev) => {
+          if (prev && childList.some((c) => c.id === prev)) return prev;
+          return childList[0]?.id ?? null;
+        });
       },
       (error) => {
         handleFirestoreError(error, OperationType.GET, `families/${familyId}/children`);
