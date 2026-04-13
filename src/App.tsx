@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Trophy,
   Settings,
@@ -18,11 +18,14 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { auth, db, googleProvider } from './firebase';
-import { signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { collection, doc, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc, getDocFromServer } from 'firebase/firestore';
-import { Quest, QuestCategory, UserProfile, Reward, HistoryRecord, CATEGORY_COLORS, CATEGORY_LABELS, UserAccount, Family, ChildProfile } from './types';
+import { signInWithPopup, signOut } from 'firebase/auth';
+import { collection, doc, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc } from 'firebase/firestore';
+import type { Quest, QuestCategory, UserProfile, Reward, ChildProfile, Family } from './types';
 import { cn, getLevel, getProgressToNextLevel } from './lib/utils';
 import { OperationType, handleFirestoreError } from './lib/firestoreError';
+import { useAuth } from './hooks/useAuth';
+import { useFamily } from './hooks/useFamily';
+import { useChildData } from './hooks/useChildData';
 import { SOUNDS, playSound } from './lib/sound';
 import { generateEncouragementText } from './lib/gemini';
 import { CategoryIcon } from './components/CategoryIcon';
@@ -58,20 +61,17 @@ type ModalConfig = {
 };
 
 export default function App() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [userAccount, setUserAccount] = useState<UserAccount | null>(null);
-  const [family, setFamily] = useState<Family | null>(null);
-  const [children, setChildren] = useState<ChildProfile[]>([]);
-  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
-  
-  const [isAuthReady, setIsAuthReady] = useState(false);
+  const { user, userAccount, isAuthReady } = useAuth();
+  const { family, children, selectedChildId, setSelectedChildId } = useFamily(userAccount);
+  const { profile, setProfile, quests, history } = useChildData(userAccount?.familyId, selectedChildId);
+
   const [isParentMode, setIsParentMode] = useState(false);
   const [parentPassword, setParentPassword] = useState('');
   const [isParentAuthenticated, setIsParentAuthenticated] = useState(false);
 
   const [viewMode, setViewMode] = useState<ViewMode>('quests');
   const [modal, setModal] = useState<ModalConfig>({ isOpen: false, title: '', message: '', type: 'alert' });
-  
+
   const exitParentMode = () => {
     setIsParentMode(false);
     setIsParentAuthenticated(false);
@@ -85,137 +85,9 @@ export default function App() {
     setModal({ isOpen: true, title, message, type: 'confirm', onConfirm });
   };
 
-  const [quests, setQuests] = useState<Quest[]>([]);
-  const [rewards, setRewards] = useState<Reward[]>(INITIAL_REWARDS);
-  const [profile, setProfile] = useState<UserProfile>({ name: '우리 아이', totalPoints: 0, level: 1, avatar: '🦁', inventory: [] });
-  const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [rewards] = useState<Reward[]>(INITIAL_REWARDS);
   const [encouragement, setEncouragement] = useState<string>('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
-
-  // Auth & User Account Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        // Test connection to Firestore
-        try {
-          await getDocFromServer(doc(db, 'test', 'connection'));
-        } catch (error) {
-          if (error instanceof Error && error.message.includes('the client is offline')) {
-            console.error("Please check your Firebase configuration. The client is offline.");
-          }
-        }
-
-        const userRef = doc(db, 'users', u.uid);
-        onSnapshot(userRef, (snap) => {
-          if (snap.exists()) {
-            setUserAccount({ uid: u.uid, ...snap.data() } as UserAccount);
-          } else {
-            const newAccount: UserAccount = {
-              uid: u.uid,
-              email: u.email || '',
-              name: u.displayName || '사용자',
-              role: 'parent' // Default to parent for first login
-            };
-            setDoc(userRef, newAccount).catch(err => {
-              handleFirestoreError(err, OperationType.WRITE, `users/${u.uid}`);
-            });
-            setUserAccount(newAccount);
-          }
-        }, (error) => {
-          handleFirestoreError(error, OperationType.GET, `users/${u.uid}`);
-        });
-      } else {
-        setUserAccount(null);
-        setFamily(null);
-        setChildren([]);
-        setSelectedChildId(null);
-      }
-      setIsAuthReady(true);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Family Listener
-  useEffect(() => {
-    if (!userAccount?.familyId) return;
-
-    const familyId = userAccount.familyId;
-    const familyRef = doc(db, 'families', familyId);
-    const unsubFamily = onSnapshot(familyRef, (snap) => {
-      if (snap.exists()) {
-        setFamily({ id: snap.id, ...snap.data() } as Family);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `families/${familyId}`);
-    });
-
-    const childrenRef = collection(db, 'families', familyId, 'children');
-    const unsubChildren = onSnapshot(childrenRef, (snap) => {
-      const childList = snap.docs.map(d => ({ id: d.id, ...d.data() } as ChildProfile));
-      setChildren(childList);
-      if (childList.length > 0 && !selectedChildId) {
-        setSelectedChildId(childList[0].id);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children`);
-    });
-
-    return () => {
-      unsubFamily();
-      unsubChildren();
-    };
-  }, [userAccount?.familyId]);
-
-  // Selected Child Data Listeners
-  useEffect(() => {
-    if (!userAccount?.familyId || !selectedChildId) return;
-
-    const familyId = userAccount.familyId;
-    const childId = selectedChildId;
-
-    const profileRef = doc(db, 'families', familyId, 'children', childId);
-    const unsubProfile = onSnapshot(profileRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setProfile(docSnap.data() as UserProfile);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children/${childId}`);
-    });
-
-    const questsRef = collection(db, 'families', familyId, 'children', childId, 'quests');
-    const unsubQuests = onSnapshot(questsRef, async (snapshot) => {
-      if (snapshot.empty) {
-        const batch = writeBatch(db);
-        INITIAL_QUESTS.forEach(q => {
-          const newDocRef = doc(questsRef);
-          batch.set(newDocRef, { ...q, id: newDocRef.id });
-        });
-        try {
-          await batch.commit();
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, `families/${familyId}/children/${childId}/quests`);
-        }
-      } else {
-        setQuests(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Quest)));
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children/${childId}/quests`);
-    });
-
-    const historyRef = collection(db, 'families', familyId, 'children', childId, 'history');
-    const unsubHistory = onSnapshot(historyRef, (snapshot) => {
-      setHistory(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as HistoryRecord)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `families/${familyId}/children/${childId}/history`);
-    });
-
-    return () => {
-      unsubProfile();
-      unsubQuests();
-      unsubHistory();
-    };
-  }, [userAccount?.familyId, selectedChildId]);
 
   // Level up logic
   useEffect(() => {
