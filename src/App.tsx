@@ -9,7 +9,6 @@ import {
   Settings,
   User,
   Sparkles,
-  ChevronRight,
   ShoppingBag,
   Lock,
   LogOut,
@@ -32,6 +31,7 @@ import { SOUNDS, playSound } from './lib/sound';
 import { generateEncouragementText } from './lib/gemini';
 import { CategoryIcon } from './components/CategoryIcon';
 import { Avatar } from './components/Avatar';
+import { ChildSwitcher } from './components/ChildSwitcher';
 import { RewardShop } from './features/child/RewardShop';
 import { ProfileView } from './features/child/ProfileView';
 import { CalendarView } from './features/child/CalendarView';
@@ -758,21 +758,14 @@ export default function App() {
             )}
           </div>
           <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <select 
-                value={selectedChildId || ''} 
-                onChange={(e) => {
-                  playSound(SOUNDS.CLICK);
-                  setSelectedChildId(e.target.value);
-                }}
-                className="font-black text-base md:text-xl leading-tight bg-transparent border-none focus:ring-0 p-0 cursor-pointer appearance-none"
-              >
-                {children.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-              <ChevronRight size={16} className="text-slate-400" />
-            </div>
+            <ChildSwitcher
+              childrenList={children}
+              selectedId={selectedChildId}
+              onSelect={(id) => {
+                playSound(SOUNDS.CLICK);
+                setSelectedChildId(id);
+              }}
+            />
             <div className="flex items-center gap-2">
               <span className="text-[10px] md:text-xs font-black bg-slate-100 px-2 py-0.5 rounded-full text-slate-600">Lv.{profile.level}</span>
               <div className="w-16 md:w-32 h-1.5 md:h-2 bg-slate-100 rounded-full overflow-hidden">
