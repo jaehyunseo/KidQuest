@@ -158,7 +158,6 @@ export default function App() {
   const pendingConsentRef = React.useRef<ConsentResult | null>(null);
 
   const handleLoginClick = () => {
-    // Check if user already agreed on this browser to skip consent modal
     try {
       if (localStorage.getItem('kidquest_consent_agreed') === '1') {
         void doSignIn();
@@ -589,6 +588,7 @@ export default function App() {
 
   if (!user) {
     return (
+      <>
       <div className="min-h-screen flex bg-white font-sans overflow-hidden">
         {/* Left Side: Premium Brand Visual */}
         <div className="hidden lg:flex lg:w-3/5 relative bg-[#0F172A] items-center justify-center p-12 overflow-hidden">
@@ -715,6 +715,12 @@ export default function App() {
           </footer>
         </div>
       </div>
+      <PrivacyConsentModal
+        open={consentOpen}
+        onClose={() => setConsentOpen(false)}
+        onAgree={handleConsentAgree}
+      />
+      </>
     );
   }
 

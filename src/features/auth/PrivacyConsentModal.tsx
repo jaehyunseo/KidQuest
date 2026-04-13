@@ -41,19 +41,22 @@ export function PrivacyConsentModal({ open, onClose, onAgree }: PrivacyConsentMo
   return (
     <AnimatePresence>
       {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-40"
+        <motion.div
+          key="privacy-consent-root"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50"
+        >
+          <div
+            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
             onClick={onClose}
           />
           <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+            initial={{ y: 20, scale: 0.95 }}
+            animate={{ y: 0, scale: 1 }}
+            exit={{ y: 20, scale: 0.95 }}
+            className="absolute inset-0 flex items-center justify-center p-4 pointer-events-none"
           >
             <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-hidden shadow-2xl pointer-events-auto flex flex-col">
               <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
@@ -182,7 +185,7 @@ export function PrivacyConsentModal({ open, onClose, onAgree }: PrivacyConsentMo
               </div>
             </div>
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   );
