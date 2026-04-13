@@ -26,9 +26,12 @@ import { OperationType, handleFirestoreError } from './lib/firestoreError';
 import { useAuth } from './hooks/useAuth';
 import { useFamily } from './hooks/useFamily';
 import { useChildData } from './hooks/useChildData';
+import { uploadChildAvatar, deleteChildAvatar } from './lib/storage';
+import { PrivacyConsentModal, type ConsentResult } from './features/auth/PrivacyConsentModal';
 import { SOUNDS, playSound } from './lib/sound';
 import { generateEncouragementText } from './lib/gemini';
 import { CategoryIcon } from './components/CategoryIcon';
+import { Avatar } from './components/Avatar';
 import { RewardShop } from './features/child/RewardShop';
 import { ProfileView } from './features/child/ProfileView';
 import { CalendarView } from './features/child/CalendarView';
@@ -88,6 +91,8 @@ export default function App() {
   const [rewards] = useState<Reward[]>(INITIAL_REWARDS);
   const [encouragement, setEncouragement] = useState<string>('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   // Level up logic
   useEffect(() => {
@@ -107,7 +112,72 @@ export default function App() {
     }
   }, [profile?.totalPoints, userAccount?.familyId, selectedChildId]);
 
-  const handleLogin = async () => {
+  // Persist consent flags to user doc once signed in
+  useEffect(() => {
+    if (!user || !userAccount) return;
+    const pending = pendingConsentRef.current;
+    if (pending && !userAccount.consentedAt) {
+      const userRef = doc(db, 'users', user.uid);
+      updateDoc(userRef, {
+        consentedAt: new Date().toISOString(),
+        consentPrivacy: pending.privacy,
+        consentTerms: pending.terms,
+        consentAge: pending.age,
+        consentMarketing: pending.marketing,
+      }).catch((err) => {
+        console.warn('Failed to persist consent:', err);
+      });
+      pendingConsentRef.current = null;
+    }
+  }, [user, userAccount]);
+
+  // Onboarding banner: pending if createFamily set it OR if user has a family
+  // but no children yet (edge case where default child creation failed)
+  useEffect(() => {
+    if (!user) {
+      setShowOnboarding(false);
+      return;
+    }
+    try {
+      const flag = localStorage.getItem(`kidquest_onboarding_${user.uid}`);
+      if (flag === 'pending') {
+        setShowOnboarding(true);
+      }
+    } catch {}
+  }, [user]);
+
+  const dismissOnboarding = () => {
+    setShowOnboarding(false);
+    if (user) {
+      try {
+        localStorage.removeItem(`kidquest_onboarding_${user.uid}`);
+      } catch {}
+    }
+  };
+
+  const pendingConsentRef = React.useRef<ConsentResult | null>(null);
+
+  const handleLoginClick = () => {
+    // Check if user already agreed on this browser to skip consent modal
+    try {
+      if (localStorage.getItem('kidquest_consent_agreed') === '1') {
+        void doSignIn();
+        return;
+      }
+    } catch {}
+    setConsentOpen(true);
+  };
+
+  const handleConsentAgree = (consent: ConsentResult) => {
+    pendingConsentRef.current = consent;
+    setConsentOpen(false);
+    try {
+      localStorage.setItem('kidquest_consent_agreed', '1');
+    } catch {}
+    void doSignIn();
+  };
+
+  const doSignIn = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
@@ -352,9 +422,71 @@ export default function App() {
       await setDoc(familyRef, newFamily);
       const userRef = doc(db, 'users', user.uid);
       await updateDoc(userRef, { familyId: inviteCode });
+
+      // Auto-create a default child so the parent dashboard isn't empty on first entry.
+      try {
+        const childrenRef = collection(db, 'families', inviteCode, 'children');
+        await addDoc(childrenRef, {
+          name: '우리 아이',
+          avatar: '🦁',
+          totalPoints: 0,
+          level: 1,
+          inventory: [],
+        } as Omit<ChildProfile, 'id'>);
+      } catch (childErr) {
+        console.warn('Failed to create default child:', childErr);
+      }
+
+      // Trigger onboarding banner for first-time parents
+      try {
+        localStorage.setItem(`kidquest_onboarding_${user.uid}`, 'pending');
+      } catch {}
+      setShowOnboarding(true);
+
       showAlert('가족 생성 완료', `가족이 생성되었습니다! 초대 코드: ${inviteCode}`);
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'families');
+    }
+  };
+
+  const uploadChildPhoto = async (file: File) => {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    const familyId = userAccount.familyId;
+    const childId = selectedChildId;
+    const previousUrl = profile.avatarUrl;
+    const url = await uploadChildAvatar(familyId, childId, file);
+    setProfile((p: UserProfile) => ({ ...p, avatarUrl: url }));
+    try {
+      await updateDoc(doc(db, 'families', familyId, 'children', childId), { avatarUrl: url });
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `families/${familyId}/children/${childId}`
+      );
+    }
+    if (previousUrl && previousUrl !== url) {
+      deleteChildAvatar(previousUrl).catch(() => {});
+    }
+  };
+
+  const removeChildPhoto = async () => {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    const familyId = userAccount.familyId;
+    const childId = selectedChildId;
+    const previousUrl = profile.avatarUrl;
+    setProfile((p: UserProfile) => ({ ...p, avatarUrl: undefined }));
+    try {
+      await updateDoc(doc(db, 'families', familyId, 'children', childId), { avatarUrl: null });
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `families/${familyId}/children/${childId}`
+      );
+    }
+    if (previousUrl) {
+      deleteChildAvatar(previousUrl).catch(() => {});
     }
   };
 
@@ -548,7 +680,7 @@ export default function App() {
               <button 
                 onClick={() => {
                   playSound(SOUNDS.CLICK);
-                  handleLogin();
+                  handleLoginClick();
                 }}
                 className="w-full group relative flex items-center justify-center gap-4 bg-slate-900 text-white font-black py-6 px-8 rounded-2xl transition-all hover:bg-slate-800 active:scale-[0.98] shadow-2xl shadow-slate-200"
               >
@@ -615,9 +747,9 @@ export default function App() {
                 playSound(SOUNDS.CLICK);
                 setIsParentMode(true);
               }}
-              className="w-10 h-10 md:w-14 md:h-14 bg-yellow-400 rounded-2xl flex items-center justify-center text-xl md:text-3xl shadow-inner cursor-pointer hover:scale-105 transition-transform"
+              className="w-10 h-10 md:w-14 md:h-14 bg-yellow-400 rounded-2xl flex items-center justify-center shadow-inner cursor-pointer hover:scale-105 transition-transform overflow-hidden"
             >
-              {profile.avatar}
+              <Avatar emoji={profile.avatar} url={profile.avatarUrl} size={56} className="rounded-2xl" />
             </button>
             {children.length > 1 && (
               <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-blue-500 rounded-full border-2 border-white flex items-center justify-center text-[10px] text-white font-bold">
@@ -759,6 +891,8 @@ export default function App() {
                   );
                 }
               }}
+              onUploadChildPhoto={uploadChildPhoto}
+              onRemoveChildPhoto={removeChildPhoto}
               onExit={() => {
                 playSound(SOUNDS.CLICK);
                 exitParentMode();
@@ -771,6 +905,8 @@ export default function App() {
               onSelectChild={setSelectedChildId}
               onJoinFamily={joinFamily}
               showAlert={showAlert}
+              showOnboarding={showOnboarding}
+              onDismissOnboarding={dismissOnboarding}
             />
           )
         ) : (
@@ -931,6 +1067,12 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      <PrivacyConsentModal
+        open={consentOpen}
+        onClose={() => setConsentOpen(false)}
+        onAgree={handleConsentAgree}
+      />
     </div>
   );
 }

@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle, Camera, Upload, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserProfile, Family } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { AvatarPicker } from './AvatarPicker';
+import { Avatar } from '../../../components/Avatar';
+import { validateImageFile } from '../../../lib/storage';
 
 interface FamilySettingsDrawerProps {
   open: boolean;
@@ -11,6 +13,8 @@ interface FamilySettingsDrawerProps {
   family: Family | null;
   profile: UserProfile;
   onUpdateChildField: (updates: Partial<UserProfile>) => void;
+  onUploadChildPhoto: (file: File) => Promise<void>;
+  onRemoveChildPhoto: () => void;
   onJoinFamily: (code: string) => void;
   onDeleteSelectedChild: () => void;
   onReset: () => void;
@@ -26,6 +30,8 @@ export function FamilySettingsDrawer({
   family,
   profile,
   onUpdateChildField,
+  onUploadChildPhoto,
+  onRemoveChildPhoto,
   onJoinFamily,
   onDeleteSelectedChild,
   onReset,
@@ -37,6 +43,27 @@ export function FamilySettingsDrawer({
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [childName, setChildName] = useState(profile.name);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const err = validateImageFile(file);
+    if (err) {
+      showAlert('업로드 실패', err);
+      return;
+    }
+    setUploading(true);
+    try {
+      await onUploadChildPhoto(file);
+    } catch (uploadErr: any) {
+      showAlert('업로드 실패', uploadErr?.message || '사진 업로드 중 오류가 발생했어요');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   useEffect(() => {
     setChildName(profile.name);
@@ -189,7 +216,54 @@ export function FamilySettingsDrawer({
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                        아바타
+                        프로필 사진
+                      </label>
+                      <div className="mt-2 flex items-center gap-4">
+                        <div className="w-20 h-20 rounded-2xl bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+                          <Avatar emoji={profile.avatar} url={profile.avatarUrl} size={80} className="rounded-2xl" />
+                        </div>
+                        <div className="flex-1 space-y-2">
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            onChange={handlePhotoPick}
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploading}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white rounded-xl text-xs font-black transition-all active:scale-95"
+                          >
+                            {uploading ? (
+                              <>업로드 중...</>
+                            ) : (
+                              <>
+                                <Upload size={14} />
+                                사진 업로드
+                              </>
+                            )}
+                          </button>
+                          {profile.avatarUrl && (
+                            <button
+                              type="button"
+                              onClick={onRemoveChildPhoto}
+                              className="w-full flex items-center justify-center gap-1.5 px-4 py-2 bg-white border border-red-200 text-red-500 rounded-xl text-[11px] font-bold hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 size={12} />
+                              사진 제거 (이모지로)
+                            </button>
+                          )}
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            JPG/PNG/WEBP · 최대 3MB
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                        이모지 아바타 (사진 없을 때 표시)
                       </label>
                       <div className="mt-2">
                         <AvatarPicker

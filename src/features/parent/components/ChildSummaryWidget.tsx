@@ -1,6 +1,7 @@
 import { Trophy } from 'lucide-react';
 import type { UserProfile, Quest } from '../../../types';
 import { getLevel, getProgressToNextLevel } from '../../../lib/utils';
+import { Avatar } from '../../../components/Avatar';
 
 interface ChildSummaryWidgetProps {
   profile: UserProfile;
@@ -18,8 +19,8 @@ export function ChildSummaryWidget({ profile, quests }: ChildSummaryWidgetProps)
       <div className="relative z-10">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center text-4xl backdrop-blur-sm">
-              {profile.avatar}
+            <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm overflow-hidden">
+              <Avatar emoji={profile.avatar} url={profile.avatarUrl} size={64} className="rounded-2xl" />
             </div>
             <div>
               <p className="text-[10px] font-black text-white/80 uppercase tracking-widest">

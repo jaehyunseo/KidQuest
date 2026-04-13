@@ -18,6 +18,7 @@ import { ChildSummaryWidget } from './components/ChildSummaryWidget';
 import { QuestQuickAdd } from './components/QuestQuickAdd';
 import { FamilySettingsDrawer } from './components/FamilySettingsDrawer';
 import { UndoToast } from './components/UndoToast';
+import { OnboardingBanner } from './components/OnboardingBanner';
 import { AVATAR_OPTIONS } from './constants';
 
 interface ParentDashboardProps {
@@ -29,6 +30,8 @@ interface ParentDashboardProps {
   onPointReset: () => void;
   profile: UserProfile;
   onUpdateChildField: (updates: Partial<UserProfile>) => void;
+  onUploadChildPhoto: (file: File) => Promise<void>;
+  onRemoveChildPhoto: () => void;
   onExit: () => void;
   family: Family | null;
   childrenList: ChildProfile[];
@@ -38,6 +41,8 @@ interface ParentDashboardProps {
   onJoinFamily: (code: string) => void;
   onDeleteChild: (id: string, name: string) => void;
   showAlert: (title: string, message: string) => void;
+  showOnboarding: boolean;
+  onDismissOnboarding: () => void;
 }
 
 export function ParentDashboard(props: ParentDashboardProps) {
@@ -50,6 +55,8 @@ export function ParentDashboard(props: ParentDashboardProps) {
     onPointReset,
     profile,
     onUpdateChildField,
+    onUploadChildPhoto,
+    onRemoveChildPhoto,
     onExit,
     family,
     childrenList,
@@ -59,6 +66,8 @@ export function ParentDashboard(props: ParentDashboardProps) {
     onJoinFamily,
     onDeleteChild,
     showAlert,
+    showOnboarding,
+    onDismissOnboarding,
   } = props;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -100,6 +109,15 @@ export function ParentDashboard(props: ParentDashboardProps) {
         familyName={family?.name || '우리 가족'}
         onOpenSettings={() => setSettingsOpen(true)}
         onExit={onExit}
+      />
+
+      <OnboardingBanner
+        show={showOnboarding && hasChildren}
+        onDismiss={onDismissOnboarding}
+        onOpenSettings={() => {
+          onDismissOnboarding();
+          setSettingsOpen(true);
+        }}
       />
 
       {!hasChildren ? (
@@ -148,6 +166,8 @@ export function ParentDashboard(props: ParentDashboardProps) {
         family={family}
         profile={profile}
         onUpdateChildField={onUpdateChildField}
+        onUploadChildPhoto={onUploadChildPhoto}
+        onRemoveChildPhoto={onRemoveChildPhoto}
         onJoinFamily={onJoinFamily}
         onDeleteSelectedChild={() => {
           if (selectedChildId) {

@@ -20,6 +20,11 @@ export interface UserAccount {
   name: string;
   role: 'parent' | 'child';
   familyId?: string;
+  consentedAt?: string;
+  consentPrivacy?: boolean;
+  consentTerms?: boolean;
+  consentAge?: boolean;
+  consentMarketing?: boolean;
 }
 
 export interface Family {
@@ -34,6 +39,7 @@ export interface ChildProfile {
   id: string;
   name: string;
   avatar: string;
+  avatarUrl?: string;
   totalPoints: number;
   level: number;
   inventory: string[];
@@ -47,6 +53,7 @@ export interface UserProfile {
   totalPoints: number;
   level: number;
   avatar: string;
+  avatarUrl?: string;
   inventory: string[]; // IDs of purchased rewards
 }
 

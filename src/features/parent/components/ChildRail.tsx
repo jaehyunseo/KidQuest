@@ -1,6 +1,7 @@
 import { Plus } from 'lucide-react';
 import type { ChildProfile, Quest } from '../../../types';
 import { cn } from '../../../lib/utils';
+import { Avatar } from '../../../components/Avatar';
 
 interface ChildRailProps {
   childrenList: ChildProfile[];
@@ -32,13 +33,15 @@ export function ChildRail({
               key={c.id}
               onClick={() => onSelect(c.id)}
               className={cn(
-                'flex-shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-24 rounded-2xl transition-all active:scale-95',
+                'flex-shrink-0 flex flex-col items-center justify-center gap-1 w-20 h-24 rounded-2xl transition-all active:scale-95 overflow-hidden',
                 isSelected
                   ? 'bg-blue-50 border-2 border-blue-500 shadow-md shadow-blue-100'
                   : 'bg-white border-2 border-slate-200'
               )}
             >
-              <span className="text-3xl">{c.avatar}</span>
+              <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center">
+                <Avatar emoji={c.avatar} url={c.avatarUrl} size={40} className="rounded-xl" />
+              </div>
               <span
                 className={cn(
                   'text-[10px] font-black truncate max-w-[70px]',
@@ -81,11 +84,11 @@ export function ChildRail({
                 >
                   <div
                     className={cn(
-                      'w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0',
+                      'w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden',
                       isSelected ? 'bg-white shadow-inner' : 'bg-slate-50'
                     )}
                   >
-                    {c.avatar}
+                    <Avatar emoji={c.avatar} url={c.avatarUrl} size={48} className="rounded-xl" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p
