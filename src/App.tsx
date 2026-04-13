@@ -27,6 +27,7 @@ import { useFamily } from './hooks/useFamily';
 import { useChildData } from './hooks/useChildData';
 import { uploadChildAvatar, deleteChildAvatar } from './lib/storage';
 import { PrivacyConsentModal, type ConsentResult } from './features/auth/PrivacyConsentModal';
+import { CURRENT_CONSENT_VERSION } from './features/auth/consent';
 import { SOUNDS, playSound } from './lib/sound';
 import { generateEncouragementText } from './lib/gemini';
 import { CategoryIcon } from './components/CategoryIcon';
@@ -112,24 +113,18 @@ export default function App() {
     }
   }, [profile?.totalPoints, userAccount?.familyId, selectedChildId]);
 
-  // Persist consent flags to user doc once signed in
+  // Post-login consent check: if the user doc lacks a valid consentVersion,
+  // force the blocking consent modal to open. This handles both first-time
+  // sign-ups and existing users who need to re-consent after a policy bump.
+  const needsConsent =
+    !!userAccount &&
+    (userAccount.consentVersion === undefined ||
+      userAccount.consentVersion < CURRENT_CONSENT_VERSION);
+
   useEffect(() => {
-    if (!user || !userAccount) return;
-    const pending = pendingConsentRef.current;
-    if (pending && !userAccount.consentedAt) {
-      const userRef = doc(db, 'users', user.uid);
-      updateDoc(userRef, {
-        consentedAt: new Date().toISOString(),
-        consentPrivacy: pending.privacy,
-        consentTerms: pending.terms,
-        consentAge: pending.age,
-        consentMarketing: pending.marketing,
-      }).catch((err) => {
-        console.warn('Failed to persist consent:', err);
-      });
-      pendingConsentRef.current = null;
-    }
-  }, [user, userAccount]);
+    if (needsConsent) setConsentOpen(true);
+    else setConsentOpen(false);
+  }, [needsConsent]);
 
   // Onboarding banner: pending if createFamily set it OR if user has a family
   // but no children yet (edge case where default child creation failed)
@@ -155,25 +150,36 @@ export default function App() {
     }
   };
 
-  const pendingConsentRef = React.useRef<ConsentResult | null>(null);
 
   const handleLoginClick = () => {
-    try {
-      if (localStorage.getItem('kidquest_consent_agreed') === '1') {
-        void doSignIn();
-        return;
-      }
-    } catch {}
-    setConsentOpen(true);
+    void doSignIn();
   };
 
-  const handleConsentAgree = (consent: ConsentResult) => {
-    pendingConsentRef.current = consent;
+  const handleConsentAgree = async (consent: ConsentResult) => {
+    if (!user) return;
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        consentedAt: new Date().toISOString(),
+        consentVersion: CURRENT_CONSENT_VERSION,
+        consentPrivacy: consent.privacy,
+        consentTerms: consent.terms,
+        consentAge: consent.age,
+        consentMarketing: consent.marketing,
+      });
+      setConsentOpen(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const handleConsentReject = async () => {
     setConsentOpen(false);
     try {
-      localStorage.setItem('kidquest_consent_agreed', '1');
-    } catch {}
-    void doSignIn();
+      await signOut(auth);
+    } catch (error) {
+      console.error('Sign out failed:', error);
+    }
   };
 
   const doSignIn = async () => {
@@ -588,7 +594,6 @@ export default function App() {
 
   if (!user) {
     return (
-      <>
       <div className="min-h-screen flex bg-white font-sans overflow-hidden">
         {/* Left Side: Premium Brand Visual */}
         <div className="hidden lg:flex lg:w-3/5 relative bg-[#0F172A] items-center justify-center p-12 overflow-hidden">
@@ -715,12 +720,6 @@ export default function App() {
           </footer>
         </div>
       </div>
-      <PrivacyConsentModal
-        open={consentOpen}
-        onClose={() => setConsentOpen(false)}
-        onAgree={handleConsentAgree}
-      />
-      </>
     );
   }
 
@@ -734,11 +733,19 @@ export default function App() {
 
   if (!userAccount.familyId) {
     return (
-      <FamilySetup
-        onCreate={createFamily}
-        onJoin={joinFamily}
-        onLogout={handleLogout}
-      />
+      <>
+        <FamilySetup
+          onCreate={createFamily}
+          onJoin={joinFamily}
+          onLogout={handleLogout}
+        />
+        <PrivacyConsentModal
+          open={consentOpen}
+          onClose={handleConsentReject}
+          onAgree={handleConsentAgree}
+          blocking
+        />
+      </>
     );
   }
 
@@ -1069,8 +1076,9 @@ export default function App() {
 
       <PrivacyConsentModal
         open={consentOpen}
-        onClose={() => setConsentOpen(false)}
+        onClose={handleConsentReject}
         onAgree={handleConsentAgree}
+        blocking
       />
     </div>
   );

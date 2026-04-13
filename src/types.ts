@@ -21,6 +21,7 @@ export interface UserAccount {
   role: 'parent' | 'child';
   familyId?: string;
   consentedAt?: string;
+  consentVersion?: number;
   consentPrivacy?: boolean;
   consentTerms?: boolean;
   consentAge?: boolean;

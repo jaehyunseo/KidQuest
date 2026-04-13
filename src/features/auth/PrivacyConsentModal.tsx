@@ -14,9 +14,23 @@ interface PrivacyConsentModalProps {
   open: boolean;
   onClose: () => void;
   onAgree: (consent: ConsentResult) => void;
+  /**
+   * If true, the modal is blocking — clicking the backdrop does
+   * nothing, and the cancel button signs the user out instead of
+   * simply closing the modal. Use this for the post-login consent
+   * check where the user must agree before entering the app.
+   */
+  blocking?: boolean;
+  cancelLabel?: string;
 }
 
-export function PrivacyConsentModal({ open, onClose, onAgree }: PrivacyConsentModalProps) {
+export function PrivacyConsentModal({
+  open,
+  onClose,
+  onAgree,
+  blocking = false,
+  cancelLabel,
+}: PrivacyConsentModalProps) {
   const [privacy, setPrivacy] = useState(false);
   const [terms, setTerms] = useState(false);
   const [age, setAge] = useState(false);
@@ -50,7 +64,7 @@ export function PrivacyConsentModal({ open, onClose, onAgree }: PrivacyConsentMo
         >
           <div
             className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
-            onClick={onClose}
+            onClick={blocking ? undefined : onClose}
           />
           <motion.div
             initial={{ y: 20, scale: 0.95 }}
@@ -63,15 +77,19 @@ export function PrivacyConsentModal({ open, onClose, onAgree }: PrivacyConsentMo
                 <div>
                   <h2 className="text-xl font-black text-slate-800">아이퀘스트 이용 동의</h2>
                   <p className="text-xs font-bold text-slate-400 mt-1">
-                    서비스 이용 전 아래 내용을 확인해주세요
+                    {blocking
+                      ? '서비스 이용을 위해 아래 항목에 동의해주세요'
+                      : '서비스 이용 전 아래 내용을 확인해주세요'}
                   </p>
                 </div>
-                <button
-                  onClick={onClose}
-                  className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
-                >
-                  <X size={16} />
-                </button>
+                {!blocking && (
+                  <button
+                    onClick={onClose}
+                    className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center hover:bg-slate-200 transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </div>
 
               <div className="flex-1 overflow-y-auto px-6 py-5 space-y-3">
@@ -168,7 +186,7 @@ export function PrivacyConsentModal({ open, onClose, onAgree }: PrivacyConsentMo
                   onClick={onClose}
                   className="flex-1 bg-white border border-slate-200 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-100 transition-colors"
                 >
-                  취소
+                  {cancelLabel ?? (blocking ? '동의하지 않음 (로그아웃)' : '취소')}
                 </button>
                 <button
                   onClick={handleAgree}
@@ -180,7 +198,7 @@ export function PrivacyConsentModal({ open, onClose, onAgree }: PrivacyConsentMo
                       : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                   )}
                 >
-                  동의하고 Google 로그인
+                  {blocking ? '동의하고 시작하기' : '동의하고 Google 로그인'}
                 </button>
               </div>
             </div>
