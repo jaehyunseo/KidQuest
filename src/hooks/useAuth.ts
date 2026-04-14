@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
-import { doc, getDocFromServer, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import type { UserAccount } from '../types';
 import { OperationType, handleFirestoreError } from '../lib/firestoreError';
@@ -25,9 +25,32 @@ export function useAuth() {
         const userRef = doc(db, 'users', u.uid);
         onSnapshot(
           userRef,
-          (snap) => {
+          async (snap) => {
             if (snap.exists()) {
-              setUserAccount({ uid: u.uid, ...snap.data() } as UserAccount);
+              const account = { uid: u.uid, ...snap.data() } as UserAccount;
+              setUserAccount(account);
+
+              // ─── Role self-healing ────────────────────────────────
+              // If this user has a familyId AND the family.members map
+              // says they are a 'parent', but their user doc still says
+              // 'child' (legacy / early-bug state), upgrade the user doc
+              // to match. This prevents Firestore rules from silently
+              // blocking all parent-only writes (rewards, categories,
+              // private/config) for users in the wrong role state.
+              if (account.familyId && account.role === 'child') {
+                try {
+                  const famSnap = await getDoc(doc(db, 'families', account.familyId));
+                  const famRole = famSnap.exists()
+                    ? (famSnap.data() as any)?.members?.[u.uid]
+                    : undefined;
+                  if (famRole === 'parent') {
+                    console.info('[auth] healing role: child → parent (family membership says parent)');
+                    await updateDoc(userRef, { role: 'parent' });
+                  }
+                } catch (err) {
+                  console.warn('[auth] role self-heal skipped:', err);
+                }
+              }
             } else {
               const newAccount: UserAccount = {
                 uid: u.uid,
