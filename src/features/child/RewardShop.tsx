@@ -14,9 +14,9 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="font-black text-2xl text-slate-800">특별 미션 보드</h2>
+          <h2 className="font-black text-2xl text-slate-800">미션 보상</h2>
           <p className="text-xs font-bold text-slate-400 mt-0.5">
-            성장 포인트로 잠긴 미션을 열어보세요!
+            미션 달성으로 모은 포인트로 보상을 받아요!
           </p>
         </div>
         <div className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-sm font-black flex items-center gap-1">
@@ -24,6 +24,17 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
           {profile.totalPoints.toLocaleString()} P
         </div>
       </div>
+
+      {rewards.length === 0 && (
+        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center space-y-3">
+          <div className="text-5xl">🎁</div>
+          <p className="text-slate-600 font-bold text-sm">아직 보상이 등록되지 않았어요</p>
+          <p className="text-slate-400 text-[11px] font-medium leading-relaxed">
+            부모님이 <span className="font-black">부모 모드 → 미션 보상 관리</span>에서<br />
+            아이가 받을 수 있는 보상을 만들어주세요!
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-4">
         {rewards.map((reward) => {
@@ -73,7 +84,7 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
                 {unlocked ? (
                   <>
                     <Sparkles size={12} />
-                    도전하기
+                    받기
                   </>
                 ) : (
                   <>

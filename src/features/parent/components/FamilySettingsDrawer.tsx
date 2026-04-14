@@ -326,7 +326,7 @@ export function FamilySettingsDrawer({
                       className="w-full flex items-center justify-center gap-2 py-3 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-black text-slate-700 transition-colors"
                     >
                       <CheckCircle2 size={14} className="text-yellow-500" />
-                      내일 다시 시작 (약속 체크 해제)
+                      내일 다시 시작 (미션 체크 해제)
                     </button>
                     <button
                       onClick={onPointReset}

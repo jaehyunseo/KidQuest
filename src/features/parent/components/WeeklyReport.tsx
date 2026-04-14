@@ -107,7 +107,7 @@ export function WeeklyReport({ profile, history }: WeeklyReportProps) {
         {/* Sparkline */}
         <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
           <p className="text-[9px] font-black text-blue-100 uppercase tracking-widest mb-2">
-            일별 약속 완료
+            일별 미션 완료
           </p>
           <div className="flex items-end justify-between gap-1 h-16">
             {stats.buckets.map((count, i) => (
@@ -126,7 +126,7 @@ export function WeeklyReport({ profile, history }: WeeklyReportProps) {
 
         {stats.questsDone === 0 && (
           <p className="text-[11px] font-bold text-blue-100 text-center">
-            이번 주는 아직 완료한 약속이 없어요. 함께 응원해주세요!
+            이번 주는 아직 완료한 미션이 없어요. 함께 응원해주세요!
           </p>
         )}
       </div>

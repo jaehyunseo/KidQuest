@@ -22,7 +22,7 @@ export function historyToCsv(records: HistoryRecord[]): string {
       const d = new Date(r.timestamp);
       const date = d.toLocaleDateString('ko-KR');
       const time = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-      const type = r.type === 'reward' ? '특별 미션' : '약속 완료';
+      const type = r.type === 'reward' ? '보상 받기' : '미션 완료';
       return [date, time, type, r.title, r.category ?? '', r.points]
         .map(escapeCell)
         .join(',');

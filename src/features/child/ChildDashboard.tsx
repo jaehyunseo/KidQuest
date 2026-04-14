@@ -45,7 +45,7 @@ export function ChildDashboard({
             <div className="mt-3 inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm rounded-full px-3 py-1">
               <Flame size={14} className="text-white" />
               <span className="text-xs font-black">
-                {profile.streak}일 연속 약속 지키기 🔥
+                {profile.streak}일 연속 미션 성공 🔥
               </span>
             </div>
           )}
@@ -75,7 +75,7 @@ export function ChildDashboard({
       {/* Quest List */}
       <div className="space-y-4">
         <div className="flex justify-between items-center">
-          <h2 className="font-black text-xl text-slate-800">오늘의 도전</h2>
+          <h2 className="font-black text-xl text-slate-800">오늘의 미션</h2>
           <span className="text-xs font-bold text-slate-400">
             {quests.filter(q => q.completed).length} / {quests.length} 완료
           </span>

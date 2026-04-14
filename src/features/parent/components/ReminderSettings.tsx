@@ -55,7 +55,7 @@ export function ReminderSettings({ showAlert, onChange }: ReminderSettingsProps)
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4">
       <p className="text-[10px] font-bold text-slate-400">
-        아이의 약속 체크를 잊지 않도록 매일 아침과 저녁에 알림을 보내드려요.
+        아이의 미션 체크를 잊지 않도록 매일 아침과 저녁에 알림을 보내드려요.
         <br />
         <span className="text-slate-400">* 현재 브라우저 탭이 열려있을 때만 작동해요.</span>
       </p>

@@ -240,7 +240,7 @@ function EmptyStateNoChildren({ onAddChild }: { onAddChild: () => void }) {
       <div>
         <h2 className="text-xl font-black text-slate-800">첫 자녀를 등록해주세요</h2>
         <p className="text-sm font-bold text-slate-400 mt-1">
-          아이를 등록하면 함께할 약속을 만들 수 있어요
+          아이를 등록하면 함께할 미션을 만들 수 있어요
         </p>
       </div>
       <button
@@ -358,9 +358,9 @@ function QuestList({
   return (
     <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-black text-lg text-slate-800">오늘의 약속들</h3>
+        <h3 className="font-black text-lg text-slate-800">오늘의 미션</h3>
         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-          약속 {quests.length}개
+          미션 {quests.length}개
         </span>
       </div>
       <div className="space-y-3">
@@ -406,9 +406,9 @@ function QuestList({
         ) : (
           <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
             <p className="text-slate-400 font-bold text-sm">
-              아직 약속이 없어요.
+              아직 미션이 없어요.
               <br />
-              위에서 첫 약속을 만들어보세요!
+              위에서 첫 미션을 만들어보세요!
             </p>
           </div>
         )}

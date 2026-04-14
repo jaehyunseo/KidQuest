@@ -165,7 +165,7 @@ describe('exportCsv.ts', () => {
     const csv = historyToCsv([
       { id: '1', type: 'reward', title: '영화의 밤', points: -500, timestamp: '2026-04-14T10:00:00Z' },
     ]);
-    assert.ok(csv.includes('특별 미션'));
+    assert.ok(csv.includes('보상 받기'));
   });
 
   test('escapes titles with commas and quotes', () => {

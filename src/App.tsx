@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
   Trophy,
   Settings,
@@ -153,15 +153,54 @@ export default function App() {
         kind === 'morning'
           ? {
               title: '🌅 좋은 아침이에요!',
-              body: `${childName}와 오늘의 약속을 함께 시작해볼까요?`,
+              body: `${childName}와 오늘의 미션을 함께 시작해볼까요?`,
             }
           : {
               title: '🌙 하루를 마무리할 시간',
-              body: `${childName}의 오늘을 함께 되돌아보고 약속을 체크해주세요.`,
+              body: `${childName}의 오늘을 함께 되돌아보고 미션을 체크해주세요.`,
             }
     );
     return cleanup;
   }, [profile?.name]);
+
+  // Migration: seed default rewards for pre-existing families.
+  //
+  // Before the Reward CRUD round, rewards were a hardcoded client-side
+  // array. Now they live in Firestore at families/{id}/rewards and are
+  // seeded inside createFamily. Families created BEFORE that change have
+  // an empty rewards collection and show nothing in the shop.
+  //
+  // This effect waits for the first rewards snapshot to settle, then
+  // seeds INITIAL_REWARDS if the collection is still empty. A
+  // `rewardsSeeded` flag on the family doc makes it idempotent — once
+  // set, we never seed again even if the user deletes all their rewards.
+  const rewardsSeedAttemptedRef = useRef(false);
+  useEffect(() => {
+    if (!userAccount?.familyId || !family) return;
+    if (family.rewardsSeeded) return;            // already done in a prior session
+    if (rewardsSeedAttemptedRef.current) return; // already attempted this session
+    // Wait ~1.2s for the useRewards snapshot to arrive
+    const timer = setTimeout(async () => {
+      rewardsSeedAttemptedRef.current = true;
+      const familyId = userAccount.familyId!;
+      try {
+        if (rewards.length === 0) {
+          const rewardsRef = collection(db, 'families', familyId, 'rewards');
+          for (const r of INITIAL_REWARDS) {
+            const { id: _id, ...rest } = r;
+            await addDoc(rewardsRef, rest);
+          }
+          console.info('[migration] seeded default rewards for', familyId);
+        }
+        // Mark flag whether we seeded or just found existing rewards
+        await updateDoc(doc(db, 'families', familyId), { rewardsSeeded: true });
+      } catch (err) {
+        console.warn('[migration] failed to seed default rewards:', err);
+      }
+    }, 1200);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userAccount?.familyId, family?.rewardsSeeded]);
 
   // Auto-reset quest checks when the local day rolls over.
   // A quest is "stale" if it's marked completed but `completedAt` is before
@@ -441,7 +480,7 @@ export default function App() {
     if (!userAccount?.familyId || !selectedChildId) return;
     const quest = quests.find(q => q.id === id);
     if (!quest) return;
-    showConfirm('약속 삭제', `정말 '${quest.title}' 약속을 삭제할까요?\n삭제하면 복구할 수 없습니다.`, async () => {
+    showConfirm('미션 삭제', `정말 '${quest.title}' 미션을 삭제할까요?\n삭제하면 복구할 수 없습니다.`, async () => {
       try {
         await deleteDoc(doc(db, 'families', userAccount.familyId!, 'children', selectedChildId!, 'quests', id));
       } catch (error) {
@@ -454,12 +493,12 @@ export default function App() {
     if (!userAccount?.familyId || !selectedChildId) return;
     if (profile.totalPoints < reward.points) {
       playSound(SOUNDS.ERROR);
-      showAlert('성장 포인트 부족', '포인트가 부족해요! 약속을 더 지켜볼까요?');
+      showAlert('성장 포인트 부족', '포인트가 부족해요! 미션을 더 지켜볼까요?');
       return;
     }
     
     playSound(SOUNDS.CLICK);
-    showConfirm('특별 미션 도전', `정말 '${reward.title}' 미션을 열어볼까요?\n${reward.points}P가 사용되며, 이 작업은 되돌릴 수 없습니다.`, async () => {
+    showConfirm('보상 받기', `정말 '${reward.title}' 보상을 받을까요?\n${reward.points}P가 사용되며, 이 작업은 되돌릴 수 없습니다.`, async () => {
       try {
         playSound(SOUNDS.CELEBRATE);
         const batch = writeBatch(db);
@@ -526,7 +565,7 @@ export default function App() {
 
   const resetDaily = () => {
     if (!userAccount?.familyId || !selectedChildId) return;
-    showConfirm('내일 다시 시작', '내일을 위해 오늘의 약속 체크만 해제할까요? (모은 성장 포인트는 유지됩니다)', async () => {
+    showConfirm('내일 다시 시작', '내일을 위해 오늘의 미션 체크만 해제할까요? (모은 성장 포인트는 유지됩니다)', async () => {
       try {
         const batch = writeBatch(db);
         quests.forEach(q => {
@@ -542,7 +581,7 @@ export default function App() {
 
   const fullReset = () => {
     if (!userAccount?.familyId || !selectedChildId) return;
-    showConfirm('전체 초기화', '정말 모든 데이터를 초기화할까요? (포인트, 기록, 달성 미션 모두 삭제되며 복구할 수 없습니다)', async () => {
+    showConfirm('전체 초기화', '정말 모든 데이터를 초기화할까요? (포인트, 기록, 받은 보상 모두 삭제되며 복구할 수 없습니다)', async () => {
       try {
         const batch = writeBatch(db);
         quests.forEach(q => {
@@ -860,7 +899,7 @@ export default function App() {
 
     showConfirm(
       '아이 삭제 확인',
-      `${childName} 아이의 모든 기록(약속, 성장 포인트, 일기 등)이 영구적으로 삭제됩니다. 정말 삭제할까요?`,
+      `${childName} 아이의 모든 기록(미션, 성장 포인트, 일기 등)이 영구적으로 삭제됩니다. 정말 삭제할까요?`,
       performDelete
     );
   };
@@ -1122,7 +1161,7 @@ export default function App() {
                 </div>
                 <div className="space-y-2">
                   <h2 className="text-2xl font-black tracking-tight">부모님 확인</h2>
-                  <p className="text-slate-500 text-sm font-bold">우리 아이의 약속과 성장을 관리하려면<br/>비밀번호를 입력하세요. (기본: 1234)</p>
+                  <p className="text-slate-500 text-sm font-bold">우리 아이의 미션과 성장을 관리하려면<br/>비밀번호를 입력하세요. (기본: 1234)</p>
                 </div>
                 <form
                   onSubmit={async (e) => {
@@ -1322,7 +1361,7 @@ export default function App() {
             )}
           >
             <Trophy size={28} className="md:w-8 md:h-8" />
-            <span className="text-[10px] md:text-xs font-black">오늘 약속</span>
+            <span className="text-[10px] md:text-xs font-black">오늘의 미션</span>
           </button>
           <button
             onClick={() => {
@@ -1348,7 +1387,7 @@ export default function App() {
             )}
           >
             <ShoppingBag size={28} className="md:w-8 md:h-8" />
-            <span className="text-[10px] md:text-xs font-black">미션 보드</span>
+            <span className="text-[10px] md:text-xs font-black">미션 보상</span>
           </button>
           <button
             onClick={() => {

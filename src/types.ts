@@ -36,6 +36,7 @@ export interface Family {
   members: Record<string, 'parent' | 'child'>; // uid -> role
   // NOTE: parentPasswordHash used to live here but is now stored in
   // /families/{id}/private/config, only readable by parent members.
+  rewardsSeeded?: boolean; // migration flag — true after default rewards seeded
 }
 
 export interface CustomCategory {
@@ -151,5 +152,5 @@ export const CATEGORY_LABELS: Record<QuestCategory, string> = {
   homework: '배움',
   chore: '도움',
   habit: '나 돌보기',
-  other: '특별한 약속',
+  other: '특별한 미션',
 };

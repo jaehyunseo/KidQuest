@@ -94,7 +94,7 @@ export function ChildSwitcher({ childrenList, selectedId, onSelect }: ChildSwitc
                   <p className="text-[11px] font-black uppercase tracking-widest">아이 바꾸기</p>
                 </div>
                 <p className="text-[10px] font-bold text-white/80 mt-0.5">
-                  누구의 약속을 볼까요?
+                  누구의 미션을 볼까요?
                 </p>
               </div>
 

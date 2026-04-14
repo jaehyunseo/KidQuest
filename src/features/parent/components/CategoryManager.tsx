@@ -45,7 +45,7 @@ export function CategoryManager({
     if (inUse) {
       showAlert(
         '삭제 불가',
-        `"${cat.label}" 카테고리를 사용 중인 약속이 있어요. 먼저 해당 약속들을 삭제하거나 다른 카테고리로 옮긴 후 다시 시도해주세요.`
+        `"${cat.label}" 카테고리를 사용 중인 미션이 있어요. 먼저 해당 미션들을 삭제하거나 다른 카테고리로 옮긴 후 다시 시도해주세요.`
       );
       return;
     }
@@ -195,7 +195,7 @@ export function CategoryManager({
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-black text-slate-800 text-sm truncate">{cat.label}</p>
-                    <p className="text-[10px] font-bold text-slate-400">사용 중: {usageCount}개 약속</p>
+                    <p className="text-[10px] font-bold text-slate-400">사용 중: {usageCount}개 미션</p>
                   </div>
                   <button
                     onClick={() => handleDelete(cat)}
@@ -207,7 +207,7 @@ export function CategoryManager({
                         : 'text-slate-300 hover:text-red-500 hover:bg-red-50'
                     )}
                     aria-label="삭제"
-                    title={usageCount > 0 ? '사용 중인 약속이 있어 삭제할 수 없어요' : '삭제'}
+                    title={usageCount > 0 ? '사용 중인 미션이 있어 삭제할 수 없어요' : '삭제'}
                   >
                     <Trash2 size={14} />
                   </button>
