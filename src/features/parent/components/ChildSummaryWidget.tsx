@@ -12,7 +12,10 @@ export function ChildSummaryWidget({ profile, quests }: ChildSummaryWidgetProps)
   const completed = quests.filter((q) => q.completed).length;
   const total = quests.length;
   const progressPercent = total > 0 ? (completed / total) * 100 : 0;
-  const levelProgress = getProgressToNextLevel(profile.totalPoints);
+  // Level is derived from lifetimeEarned (monotonic), never from the
+  // current balance — so buying rewards never drops level display.
+  const levelBasis = profile.lifetimeEarned ?? profile.totalPoints;
+  const levelProgress = getProgressToNextLevel(levelBasis);
 
   return (
     <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-3xl p-6 text-white shadow-xl shadow-orange-200 relative overflow-hidden">
@@ -28,7 +31,7 @@ export function ChildSummaryWidget({ profile, quests }: ChildSummaryWidgetProps)
               </p>
               <h2 className="text-2xl font-black tracking-tight">{profile.name}</h2>
               <p className="text-sm font-bold text-white/90">
-                Lv.{getLevel(profile.totalPoints)} · {profile.totalPoints.toLocaleString()}P
+                Lv.{getLevel(levelBasis)} · {profile.totalPoints.toLocaleString()}P
               </p>
             </div>
           </div>

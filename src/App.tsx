@@ -199,6 +199,38 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userAccount?.familyId, family?.rewardsSeeded]);
 
+  // Migration: populate `lifetimeEarned` for children created before the
+  // field existed. We compute it from the history subcollection (sum of
+  // all positive-point entries, i.e. quest completions only — reward
+  // purchases appear as negative and are skipped).
+  //
+  // Runs once per child per session, only when lifetimeEarned is unset.
+  // Idempotent: flipping the field from undefined to a number means the
+  // effect short-circuits on re-runs.
+  const lifetimeMigrationRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!userAccount?.familyId || !selectedChildId || !profile) return;
+    if (profile.lifetimeEarned != null) return;        // already migrated
+    if (history.length === 0) return;                  // snapshot not ready
+    const key = `${userAccount.familyId}/${selectedChildId}`;
+    if (lifetimeMigrationRef.current.has(key)) return; // already attempted
+    lifetimeMigrationRef.current.add(key);
+
+    const earned = history.reduce((sum, h) => {
+      if (h.type === 'reward') return sum;
+      return sum + Math.max(0, h.points ?? 0);
+    }, 0);
+
+    const childRef = doc(db, 'families', userAccount.familyId, 'children', selectedChildId);
+    updateDoc(childRef, { lifetimeEarned: earned })
+      .then(() => {
+        console.info(`[migration] lifetimeEarned=${earned} set for ${key}`);
+      })
+      .catch((err) => {
+        console.warn('[migration] failed to set lifetimeEarned:', err);
+      });
+  }, [userAccount?.familyId, selectedChildId, profile?.lifetimeEarned, history]);
+
   // Auto-reset quest checks when the local day rolls over.
   // A quest is "stale" if it's marked completed but `completedAt` is before
   // today's local date. We uncheck it WITHOUT subtracting points (yesterday's
@@ -229,10 +261,18 @@ export default function App() {
   }, [dayKey, quests, userAccount?.familyId, selectedChildId]);
 
   // Level up logic
+  //
+  // Level is derived from `lifetimeEarned` (monotonic cumulative points),
+  // NOT the current balance. This way buying rewards never drops level.
+  // Fallback to `totalPoints` only when lifetimeEarned is absent
+  // (legacy data, pre-migration).
   useEffect(() => {
     if (!profile || !userAccount?.familyId || !selectedChildId) return;
-    const newLevel = getLevel(profile.totalPoints);
-    if (newLevel !== profile.level) {
+    const basis = profile.lifetimeEarned ?? profile.totalPoints;
+    const newLevel = getLevel(basis);
+    // Level can only increase. If current stored level is somehow higher
+    // (e.g. legacy inflated), don't regress it on this render.
+    if (newLevel > profile.level) {
       const childRef = doc(db, 'families', userAccount.familyId, 'children', selectedChildId);
       updateDoc(childRef, { level: newLevel }).catch(err => {
         handleFirestoreError(err, OperationType.UPDATE, childRef.path);
@@ -244,7 +284,7 @@ export default function App() {
         colors: ['#FFD700', '#FFA500', '#FF4500']
       });
     }
-  }, [profile?.totalPoints, userAccount?.familyId, selectedChildId]);
+  }, [profile?.lifetimeEarned, profile?.totalPoints, profile?.level, userAccount?.familyId, selectedChildId]);
 
   // Post-login consent check: if the user doc lacks a valid consentVersion,
   // force the blocking consent modal to open. This handles both first-time
@@ -359,6 +399,9 @@ export default function App() {
       const longest = Math.max(profile.longestStreak ?? 0, newStreak);
       const newTotalCompleted = (profile.totalCompleted ?? 0) + 1;
       const newTotalPoints = profile.totalPoints + quest.points;
+      // lifetimeEarned is monotonic — drives level, never decreases
+      // when rewards are purchased.
+      const newLifetimeEarned = (profile.lifetimeEarned ?? profile.totalPoints) + quest.points;
 
       // Evaluate newly-unlocked achievements against the *post-update* stats
       const already = profile.achievements ?? [];
@@ -385,6 +428,7 @@ export default function App() {
       // Update Profile: points + streak + achievements
       batch.update(doc(db, 'families', familyId, 'children', childId), {
         totalPoints: newTotalPoints,
+        lifetimeEarned: newLifetimeEarned,
         totalCompleted: newTotalCompleted,
         streak: newStreak,
         longestStreak: longest,
@@ -437,9 +481,16 @@ export default function App() {
         completedAt: null 
       });
       
-      // Update Profile Points
+      // Update Profile Points. Also roll back lifetimeEarned so parents
+      // unchecking an accidentally-marked quest don't let the child keep
+      // inflated lifetime progress. Clamp at 0 in case of legacy data.
+      const rolledBackLifetime = Math.max(
+        0,
+        (profile.lifetimeEarned ?? profile.totalPoints) - quest.points
+      );
       batch.update(doc(db, 'families', familyId, 'children', childId), {
-        totalPoints: profile.totalPoints - quest.points
+        totalPoints: profile.totalPoints - quest.points,
+        lifetimeEarned: rolledBackLifetime,
       });
 
       // Remove History (find today's record for this quest)
@@ -1150,7 +1201,7 @@ export default function App() {
                 <motion.div 
                   className="h-full bg-yellow-400"
                   initial={{ width: 0 }}
-                  animate={{ width: `${getProgressToNextLevel(profile.totalPoints)}%` }}
+                  animate={{ width: `${getProgressToNextLevel(profile.lifetimeEarned ?? profile.totalPoints)}%` }}
                 />
               </div>
             </div>

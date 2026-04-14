@@ -57,7 +57,8 @@ export interface ChildProfile {
   name: string;
   avatar: string;
   avatarUrl?: string;
-  totalPoints: number;
+  totalPoints: number;         // current balance (can go down on reward purchase)
+  lifetimeEarned?: number;     // monotonic — sum of all points ever earned; drives level
   level: number;
   inventory: string[];
   // Streak / achievements (added in RBAC+Streak round)
@@ -74,6 +75,7 @@ export interface UserProfile {
   role?: 'parent' | 'child';
   name: string;
   totalPoints: number;
+  lifetimeEarned?: number;
   level: number;
   avatar: string;
   avatarUrl?: string;
