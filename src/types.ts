@@ -154,8 +154,8 @@ export const CATEGORY_COLORS: Record<QuestCategory, string> = {
 };
 
 export const CATEGORY_LABELS: Record<QuestCategory, string> = {
-  homework: '배움',
-  chore: '도움',
+  homework: '숙제',
+  chore: '부모님 도와드리기',
   habit: '나 돌보기',
   other: '특별한 미션',
 };

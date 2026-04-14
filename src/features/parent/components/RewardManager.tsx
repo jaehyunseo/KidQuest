@@ -12,9 +12,10 @@ interface RewardManagerProps {
   onAdd: (reward: Omit<Reward, 'id'>) => Promise<void>;
   onUpdate: (id: string, updates: Partial<Omit<Reward, 'id'>>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  showAlert: (title: string, message: string) => void;
 }
 
-export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardManagerProps) {
+export function RewardManager({ rewards, onAdd, onUpdate, onDelete, showAlert }: RewardManagerProps) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [seeding, setSeeding] = useState(false);
@@ -28,14 +29,34 @@ export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardMana
   const handleSeedTemplates = async () => {
     if (seeding) return;
     setSeeding(true);
-    try {
-      for (const t of REWARD_TEMPLATES) {
+    let added = 0;
+    let lastError: any = null;
+    for (const t of REWARD_TEMPLATES) {
+      try {
         await onAdd(t);
+        added++;
+      } catch (err: any) {
+        lastError = err;
+        console.warn('[seed] failed to add', t.title, err);
       }
-    } catch (err) {
-      console.warn('Failed to seed templates:', err);
-    } finally {
-      setSeeding(false);
+    }
+    setSeeding(false);
+    if (added === 0 && lastError) {
+      const code = lastError?.code || '';
+      const msg = lastError?.message || '';
+      if (code === 'permission-denied' || /permission/i.test(msg)) {
+        showAlert(
+          '권한 오류',
+          '보상을 저장할 권한이 없어요. Firebase 보안 규칙이 아직 배포되지 않았을 수 있어요.\n\n다음 명령으로 배포 후 다시 시도해주세요:\nnpx firebase deploy --only firestore:rules'
+        );
+      } else {
+        showAlert('템플릿 추가 실패', msg || '알 수 없는 오류가 발생했어요.');
+      }
+    } else if (added < REWARD_TEMPLATES.length) {
+      showAlert(
+        '일부만 추가됨',
+        `${added}/${REWARD_TEMPLATES.length}개만 추가됐어요. 콘솔(F12)에서 상세 오류를 확인해주세요.`
+      );
     }
   };
 

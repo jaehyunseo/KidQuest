@@ -174,6 +174,7 @@ export function ParentDashboard(props: ParentDashboardProps) {
                   onAdd={onAddReward}
                   onUpdate={onUpdateReward}
                   onDelete={onDeleteReward}
+                  showAlert={showAlert}
                 />
                 <CategoryManager
                   customCategories={customCategories}

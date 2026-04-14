@@ -727,11 +727,14 @@ export default function App() {
 
   // ===== Reward CRUD =====
   const addReward = async (data: Omit<Reward, 'id'>) => {
-    if (!userAccount?.familyId) return;
+    if (!userAccount?.familyId) throw new Error('가족 정보를 찾을 수 없어요');
     try {
       await addDoc(collection(db, 'families', userAccount.familyId, 'rewards'), data);
-    } catch (error) {
+    } catch (error: any) {
       handleFirestoreError(error, OperationType.CREATE, `families/${userAccount.familyId}/rewards`);
+      // Re-throw so callers (e.g. RewardManager bulk seed button) can
+      // surface a real error message instead of silently failing.
+      throw error;
     }
   };
 
