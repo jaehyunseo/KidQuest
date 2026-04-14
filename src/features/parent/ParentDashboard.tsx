@@ -163,7 +163,7 @@ export function ParentDashboard(props: ParentDashboardProps) {
               <>
                 <ChildSummaryWidget profile={profile} quests={quests} />
                 <WeeklyReport profile={{ name: profile.name, streak: profile.streak, longestStreak: profile.longestStreak, achievements: profile.achievements, totalCompleted: profile.totalCompleted }} history={history} />
-                <QuestQuickAdd onAdd={onAdd} customCategories={customCategories} />
+                <QuestQuickAdd onAdd={onAdd} customCategories={customCategories} history={history} />
                 <QuestList
                   quests={quests}
                   customCategories={customCategories}
@@ -225,6 +225,7 @@ export function ParentDashboard(props: ParentDashboardProps) {
         showAlert={showAlert}
         hasSelectedChild={hasSelectedChild}
         onChangePassword={onChangePassword}
+        history={history}
       />
 
       <UndoToast message={undoMessage} onUndo={performUndo} />

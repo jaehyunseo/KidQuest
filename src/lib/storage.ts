@@ -35,3 +35,14 @@ export async function deleteChildAvatar(url: string): Promise<void> {
     console.warn('Failed to delete old avatar:', e);
   }
 }
+
+export async function uploadFeedImage(
+  familyId: string,
+  file: File
+): Promise<string> {
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  const path = `families/${familyId}/feed/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const storageRef = ref(storage, path);
+  await uploadBytes(storageRef, file, { contentType: file.type });
+  return await getDownloadURL(storageRef);
+}

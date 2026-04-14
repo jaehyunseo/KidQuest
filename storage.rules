@@ -38,6 +38,13 @@ service firebase.storage {
       allow delete: if isAuthed();
     }
 
+    // Family feed (mini SNS) photo uploads
+    match /families/{familyId}/feed/{file=**} {
+      allow read: if isAuthed();
+      allow write: if isAuthed() && isValidAvatar();
+      allow delete: if isAuthed();
+    }
+
     // Default deny for every other path.
     match /{allPaths=**} {
       allow read, write: if false;

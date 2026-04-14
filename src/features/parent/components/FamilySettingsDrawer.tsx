@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle, KeyRound, Upload, Trash2 } from 'lucide-react';
+import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle, KeyRound, Upload, Trash2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { UserProfile, Family } from '../../../types';
+import type { UserProfile, Family, HistoryRecord } from '../../../types';
+import { downloadHistoryCsv } from '../../../lib/exportCsv';
 import { cn } from '../../../lib/utils';
 import { AvatarPicker } from './AvatarPicker';
 import { Avatar } from '../../../components/Avatar';
 import { validateImageFile } from '../../../lib/storage';
 import { PasswordChangeForm } from './PasswordChangeForm';
+import { ReminderSettings } from './ReminderSettings';
 
 interface FamilySettingsDrawerProps {
   open: boolean;
@@ -24,6 +26,7 @@ interface FamilySettingsDrawerProps {
   showAlert: (title: string, message: string) => void;
   hasSelectedChild: boolean;
   onChangePassword: (current: string, next: string) => Promise<{ ok: boolean; error?: string }>;
+  history: HistoryRecord[];
 }
 
 export function FamilySettingsDrawer({
@@ -42,6 +45,7 @@ export function FamilySettingsDrawer({
   showAlert,
   hasSelectedChild,
   onChangePassword,
+  history,
 }: FamilySettingsDrawerProps) {
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -280,6 +284,13 @@ export function FamilySettingsDrawer({
               )}
 
               <section className="space-y-3">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  매일 알림
+                </h3>
+                <ReminderSettings showAlert={showAlert} />
+              </section>
+
+              <section className="space-y-3">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1">
                   <KeyRound size={12} /> 부모 비밀번호
                 </h3>
@@ -297,6 +308,19 @@ export function FamilySettingsDrawer({
                     <AlertTriangle size={12} /> 데이터 관리
                   </h3>
                   <div className="bg-white border border-red-100 rounded-2xl p-5 space-y-3">
+                    <button
+                      onClick={() => {
+                        if (history.length === 0) {
+                          showAlert('내보낼 기록 없음', '아직 기록된 활동이 없어요.');
+                          return;
+                        }
+                        downloadHistoryCsv(history, profile.name || '아이');
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-3 bg-blue-50 hover:bg-blue-100 rounded-xl text-xs font-black text-blue-600 transition-colors"
+                    >
+                      <Download size={14} />
+                      활동 기록 CSV로 내보내기
+                    </button>
                     <button
                       onClick={onReset}
                       className="w-full flex items-center justify-center gap-2 py-3 bg-slate-50 hover:bg-slate-100 rounded-xl text-xs font-black text-slate-700 transition-colors"

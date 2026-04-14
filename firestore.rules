@@ -110,6 +110,35 @@ service cloud.firestore {
       }
 
       // -----------------------------------------------------------
+      // Family Feed (mini SNS) — family members only
+      // -----------------------------------------------------------
+      match /feed/{postId} {
+        allow read: if isFamilyMember(familyId) || isAdmin();
+        // Create: any family member, and authorUid must match the caller.
+        allow create: if isFamilyMember(familyId) &&
+                      request.resource.data.authorUid == request.auth.uid;
+        // Update: author may update freely; other members may only change
+        // the `reactions` map (to toggle their own reaction) or the
+        // denormalized `commentCount` / `lastCommentAt` fields (touched
+        // when they add a comment).
+        allow update: if isFamilyMember(familyId) && (
+          resource.data.authorUid == request.auth.uid ||
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['reactions', 'commentCount', 'lastCommentAt'])
+        );
+        allow delete: if isFamilyMember(familyId) &&
+                      resource.data.authorUid == request.auth.uid;
+
+        match /comments/{commentId} {
+          allow read: if isFamilyMember(familyId) || isAdmin();
+          allow create: if isFamilyMember(familyId) &&
+                        request.resource.data.authorUid == request.auth.uid;
+          allow update, delete: if isFamilyMember(familyId) &&
+                        resource.data.authorUid == request.auth.uid;
+        }
+      }
+
+      // -----------------------------------------------------------
       // Children
       // -----------------------------------------------------------
       match /children/{childId} {

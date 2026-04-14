@@ -87,6 +87,40 @@ export interface Reward {
   icon: string;
 }
 
+// ============================================================
+// Family Feed (mini Instagram — internal family SNS)
+// ============================================================
+
+export type FeedReactionEmoji = '❤️' | '👍' | '🎉' | '😍' | '🔥' | '🌟';
+
+export const FEED_REACTIONS: FeedReactionEmoji[] = ['❤️', '👍', '🎉', '😍', '🔥', '🌟'];
+
+export interface FeedPost {
+  id: string;
+  authorUid: string;
+  authorName: string;
+  authorAvatar: string;        // emoji
+  authorAvatarUrl?: string;    // photo URL if set
+  authorRole: 'parent' | 'child';
+  text: string;
+  imageUrl?: string;
+  createdAt: string;           // ISO
+  // reactions: uid -> emoji
+  reactions?: Record<string, FeedReactionEmoji>;
+  commentCount?: number;
+}
+
+export interface FeedComment {
+  id: string;
+  authorUid: string;
+  authorName: string;
+  authorAvatar: string;
+  authorAvatarUrl?: string;
+  authorRole: 'parent' | 'child';
+  text: string;
+  createdAt: string;
+}
+
 export interface HistoryRecord {
   id: string;
   type?: 'quest' | 'reward';

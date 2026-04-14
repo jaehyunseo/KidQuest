@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   Trophy,
   Settings,
@@ -13,6 +13,7 @@ import {
   Lock,
   LogOut,
   Calendar as CalendarIcon,
+  Camera,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
@@ -27,6 +28,19 @@ import { useFamily } from './hooks/useFamily';
 import { useChildData } from './hooks/useChildData';
 import { useRewards } from './hooks/useRewards';
 import { useCategories } from './hooks/useCategories';
+import { useFeed } from './hooks/useFeed';
+import { loadReminderSettings, startReminderLoop } from './lib/reminders';
+
+// Heavy screens are lazy-loaded to keep the initial bundle small.
+const FeedView = lazy(() =>
+  import('./features/feed/FeedView').then((m) => ({ default: m.FeedView }))
+);
+const LazyParentDashboard = lazy(() =>
+  import('./features/parent/ParentDashboard').then((m) => ({ default: m.ParentDashboard }))
+);
+const LazyCalendarView = lazy(() =>
+  import('./features/child/CalendarView').then((m) => ({ default: m.CalendarView }))
+);
 import { uploadChildAvatar, deleteChildAvatar } from './lib/storage';
 import { sha256, saltedHash, randomSalt } from './lib/hash';
 import {
@@ -44,10 +58,8 @@ import { ChildSwitcher } from './components/ChildSwitcher';
 import { BadgeUnlockModal } from './components/BadgeUnlockModal';
 import { RewardShop } from './features/child/RewardShop';
 import { ProfileView } from './features/child/ProfileView';
-import { CalendarView } from './features/child/CalendarView';
 import { FamilySetup } from './features/auth/FamilySetup';
 import { ChildDashboard } from './features/child/ChildDashboard';
-import { ParentDashboard } from './features/parent/ParentDashboard';
 
 const INITIAL_QUESTS: Quest[] = [
   { id: '1', title: '수학 익힘책 풀기', points: 10, category: 'homework', completed: false },
@@ -63,7 +75,7 @@ const INITIAL_REWARDS: Reward[] = [
   { id: 'r4', title: '원하는 장난감 선물', description: '부모님과 상의해서 원하는 장난감을 골라요!', points: 5000, icon: '🧸' },
 ];
 
-type ViewMode = 'quests' | 'shop' | 'profile' | 'calendar';
+type ViewMode = 'quests' | 'shop' | 'profile' | 'calendar' | 'feed';
 
 type ModalConfig = {
   isOpen: boolean;
@@ -79,6 +91,7 @@ export default function App() {
   const { profile, setProfile, quests, history } = useChildData(userAccount?.familyId, selectedChildId);
   const rewards = useRewards(userAccount?.familyId);
   const customCategories = useCategories(userAccount?.familyId);
+  const { posts: feedPosts, loading: feedLoading } = useFeed(userAccount?.familyId);
 
   const [isParentMode, setIsParentMode] = useState(false);
   const [parentPassword, setParentPassword] = useState('');
@@ -128,6 +141,27 @@ export default function App() {
       window.removeEventListener('focus', tick);
     };
   }, []);
+
+  // Daily reminder loop — fires local notifications at the configured
+  // morning/evening hours when the tab is active. Settings persist in
+  // localStorage; see src/lib/reminders.ts.
+  useEffect(() => {
+    const childName = profile?.name || '우리 아이';
+    const cleanup = startReminderLoop(
+      () => loadReminderSettings(),
+      (kind) =>
+        kind === 'morning'
+          ? {
+              title: '🌅 좋은 아침이에요!',
+              body: `${childName}와 오늘의 약속을 함께 시작해볼까요?`,
+            }
+          : {
+              title: '🌙 하루를 마무리할 시간',
+              body: `${childName}의 오늘을 함께 되돌아보고 약속을 체크해주세요.`,
+            }
+    );
+    return cleanup;
+  }, [profile?.name]);
 
   // Auto-reset quest checks when the local day rolls over.
   // A quest is "stale" if it's marked completed but `completedAt` is before
@@ -1134,7 +1168,8 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <ParentDashboard
+            <Suspense fallback={<div className="p-12 text-center text-slate-400 font-bold">부모 대시보드를 불러오는 중...</div>}>
+            <LazyParentDashboard
               quests={quests}
               history={history}
               onAdd={addQuest}
@@ -1184,6 +1219,7 @@ export default function App() {
               onDeleteCategory={deleteCustomCategory}
               onChangePassword={changeParentPassword}
             />
+            </Suspense>
           )
         ) : (
           <AnimatePresence mode="wait">
@@ -1213,7 +1249,9 @@ export default function App() {
                   />
                 </div>
                 <div className={cn("lg:col-span-4 mt-6 lg:mt-0", viewMode === 'quests' && "hidden lg:block")}>
-                  <CalendarView history={history} customCategories={customCategories} />
+                  <Suspense fallback={<div className="p-6 text-center text-slate-400 text-xs font-bold">달력을 불러오는 중...</div>}>
+                    <LazyCalendarView history={history} customCategories={customCategories} />
+                  </Suspense>
                 </div>
               </motion.div>
             )}
@@ -1245,6 +1283,25 @@ export default function App() {
                   profile={profile}
                   rewards={rewards}
                 />
+              </motion.div>
+            )}
+            {viewMode === 'feed' && (
+              <motion.div
+                key="feed"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+              >
+                <Suspense fallback={<div className="p-12 text-center text-slate-400 font-bold">피드를 불러오는 중...</div>}>
+                  <FeedView
+                    familyId={userAccount?.familyId}
+                    posts={feedPosts}
+                    loading={feedLoading}
+                    userAccount={userAccount}
+                    profile={profile}
+                    showAlert={showAlert}
+                  />
+                </Suspense>
               </motion.div>
             )}
           </AnimatePresence>
@@ -1293,7 +1350,20 @@ export default function App() {
             <ShoppingBag size={28} className="md:w-8 md:h-8" />
             <span className="text-[10px] md:text-xs font-black">미션 보드</span>
           </button>
-          <button 
+          <button
+            onClick={() => {
+              playSound(SOUNDS.CLICK);
+              setViewMode('feed');
+            }}
+            className={cn(
+              "flex flex-col items-center gap-1 transition-all hover:scale-110",
+              viewMode === 'feed' ? "text-yellow-500" : "text-slate-400"
+            )}
+          >
+            <Camera size={28} className="md:w-8 md:h-8" />
+            <span className="text-[10px] md:text-xs font-black">가족 피드</span>
+          </button>
+          <button
             onClick={() => {
               playSound(SOUNDS.CLICK);
               setViewMode('profile');

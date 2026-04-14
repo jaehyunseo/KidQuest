@@ -1,29 +1,55 @@
-import React, { useState } from 'react';
-import { Plus, ChevronRight } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, ChevronRight, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CATEGORY_LABELS, type CustomCategory, type QuestCategory } from '../../../types';
+import { CATEGORY_LABELS, type CustomCategory, type HistoryRecord, type QuestCategory } from '../../../types';
 import { cn } from '../../../lib/utils';
 import { CategoryIcon } from '../../../components/CategoryIcon';
 import { resolveCategory } from '../../../lib/categoryDisplay';
 import { QUEST_PRESETS } from '../constants';
+import { topCategories } from '../../../lib/categoryPreference';
 
 interface QuestQuickAddProps {
   onAdd: (title: string, points: number, category: QuestCategory | string) => void;
   customCategories: CustomCategory[];
+  history: HistoryRecord[];
 }
 
 const BUILTIN_FILTERS: Array<QuestCategory | 'all'> = ['all', 'homework', 'chore', 'habit', 'other'];
 
-export function QuestQuickAdd({ onAdd, customCategories }: QuestQuickAddProps) {
-  const [filter, setFilter] = useState<string>('all');
+export function QuestQuickAdd({ onAdd, customCategories, history }: QuestQuickAddProps) {
+  const [filter, setFilter] = useState<string>('recommended');
   const [showFullForm, setShowFullForm] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newPoints, setNewPoints] = useState<number | string>(10);
   const [newCategory, setNewCategory] = useState<string>('homework');
 
-  const allFilters: string[] = [...BUILTIN_FILTERS, ...customCategories.map((c) => c.id)];
+  // Top 3 categories the child actually completes — used to surface the
+  // most relevant presets first.
+  const favoriteCategories = useMemo(() => topCategories(history, 3), [history]);
+  const hasPreferences = favoriteCategories.length > 0;
+
+  const allFilters: string[] = [
+    ...(hasPreferences ? ['recommended'] : []),
+    ...BUILTIN_FILTERS,
+    ...customCategories.map((c) => c.id),
+  ];
   const filteredPresets =
-    filter === 'all' ? QUEST_PRESETS : QUEST_PRESETS.filter((p) => p.category === filter);
+    filter === 'all'
+      ? QUEST_PRESETS
+      : filter === 'recommended'
+        ? (hasPreferences
+            ? QUEST_PRESETS
+                .slice()
+                .sort((a, b) => {
+                  const ai = favoriteCategories.indexOf(a.category);
+                  const bi = favoriteCategories.indexOf(b.category);
+                  const av = ai === -1 ? 99 : ai;
+                  const bv = bi === -1 ? 99 : bi;
+                  return av - bv;
+                })
+                .slice(0, 6)
+            : QUEST_PRESETS)
+      : QUEST_PRESETS.filter((p) => p.category === filter);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,8 +91,10 @@ export function QuestQuickAdd({ onAdd, customCategories }: QuestQuickAddProps) {
           >
             <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-1 px-1 pb-1">
               {allFilters.map((c) => {
-                const label =
-                  c === 'all'
+                const isRecommended = c === 'recommended';
+                const label = isRecommended
+                  ? '추천'
+                  : c === 'all'
                     ? '전체'
                     : resolveCategory(c, customCategories).label;
                 return (
@@ -74,12 +102,17 @@ export function QuestQuickAdd({ onAdd, customCategories }: QuestQuickAddProps) {
                     key={c}
                     onClick={() => setFilter(c)}
                     className={cn(
-                      'flex-shrink-0 px-4 py-1.5 rounded-full text-[11px] font-black transition-all',
+                      'flex-shrink-0 px-4 py-1.5 rounded-full text-[11px] font-black transition-all flex items-center gap-1',
                       filter === c
-                        ? 'bg-slate-900 text-white'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        ? isRecommended
+                          ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-md'
+                          : 'bg-slate-900 text-white'
+                        : isRecommended
+                          ? 'bg-pink-50 text-pink-600 hover:bg-pink-100'
+                          : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
                     )}
                   >
+                    {isRecommended && <Sparkles size={10} />}
                     {label}
                   </button>
                 );
