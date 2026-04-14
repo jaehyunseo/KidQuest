@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
-    "dev:emulator": "cross-env VITE_USE_EMULATOR=1 vite --port=3000 --host=0.0.0.0",
+    "dev": "vite --port=3030 --host=localhost",
+    "dev:emulator": "cross-env VITE_USE_EMULATOR=1 vite --port=3030 --host=localhost",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Edit2, X, Check } from 'lucide-react';
+import { Plus, Trash2, Edit2, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Reward } from '../../../types';
 import { cn } from '../../../lib/utils';
+import { REWARD_TEMPLATES } from '../constants';
 
 const REWARD_EMOJIS = ['🎁', '📺', '🍦', '🎮', '🧸', '🍕', '🍫', '🎬', '🎨', '⚽', '📚', '🎵', '🚲', '🎢', '🏖️', '🎪'];
 
@@ -16,12 +17,27 @@ interface RewardManagerProps {
 export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardManagerProps) {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [seeding, setSeeding] = useState(false);
   const [draft, setDraft] = useState<Omit<Reward, 'id'>>({
     title: '',
     description: '',
     points: 100,
     icon: REWARD_EMOJIS[0],
   });
+
+  const handleSeedTemplates = async () => {
+    if (seeding) return;
+    setSeeding(true);
+    try {
+      for (const t of REWARD_TEMPLATES) {
+        await onAdd(t);
+      }
+    } catch (err) {
+      console.warn('Failed to seed templates:', err);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const resetDraft = () => {
     setDraft({ title: '', description: '', points: 100, icon: REWARD_EMOJIS[0] });
@@ -189,11 +205,26 @@ export function RewardManager({ rewards, onAdd, onUpdate, onDelete }: RewardMana
             </motion.div>
           ))
         ) : (
-          <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl p-6 text-center">
-            <p className="text-slate-400 font-bold text-xs">
+          <div className="bg-gradient-to-br from-pink-50 to-yellow-50 border-2 border-dashed border-pink-200 rounded-2xl p-6 text-center space-y-3">
+            <div className="text-3xl">🎁</div>
+            <p className="text-slate-600 font-bold text-xs leading-relaxed">
               아직 보상이 없어요.
-              <br />위 + 버튼으로 첫 보상을 만들어보세요!
+              <br />
+              <span className="text-slate-400 font-medium">기본 템플릿 6개를 한 번에 추가하거나, 위 + 버튼으로 직접 만들 수 있어요.</span>
             </p>
+            <button
+              onClick={handleSeedTemplates}
+              disabled={seeding}
+              className={cn(
+                'w-full flex items-center justify-center gap-1.5 py-3 rounded-xl text-xs font-black transition-all active:scale-95',
+                seeding
+                  ? 'bg-slate-200 text-slate-400 cursor-wait'
+                  : 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-100'
+              )}
+            >
+              <Sparkles size={14} />
+              {seeding ? '추가하는 중...' : '기본 템플릿 6개 추가'}
+            </button>
           </div>
         )}
       </div>

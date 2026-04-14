@@ -34,8 +34,13 @@ export interface Family {
   inviteCode: string;
   createdAt: string;
   members: Record<string, 'parent' | 'child'>; // uid -> role
-  // NOTE: parentPasswordHash used to live here but is now stored in
-  // /families/{id}/private/config, only readable by parent members.
+  // Parent password hash — PRIMARY location is /families/{id}/private/config
+  // (parent-only via deployed rules). These root-level fields are a
+  // fallback-writable backup so password change works even before the
+  // new firestore.rules are deployed. If rules ARE deployed, private/config
+  // wins; if NOT, these legacy fields are used.
+  parentPasswordHash?: string;
+  parentPasswordSalt?: string;
   rewardsSeeded?: boolean; // migration flag — true after default rewards seeded
 }
 

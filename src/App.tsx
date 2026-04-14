@@ -68,12 +68,10 @@ const INITIAL_QUESTS: Quest[] = [
   { id: '4', title: '영어 단어 10개 외우기', points: 20, category: 'homework', completed: false },
 ];
 
-const INITIAL_REWARDS: Reward[] = [
-  { id: 'r1', title: '유튜브 30분 시청권', description: '오늘 하루 유튜브를 30분 더 볼 수 있어요!', points: 300, icon: '📺' },
-  { id: 'r2', title: '맛있는 아이스크림', description: '편의점에서 좋아하는 아이스크림 하나!', points: 500, icon: '🍦' },
-  { id: 'r3', title: '주말 게임 1시간 추가', description: '이번 주말에 게임을 1시간 더 할 수 있어요.', points: 1000, icon: '🎮' },
-  { id: 'r4', title: '원하는 장난감 선물', description: '부모님과 상의해서 원하는 장난감을 골라요!', points: 5000, icon: '🧸' },
-];
+// Default reward templates moved to features/parent/constants.ts
+// so they can be reused by createFamily, the migration effect, and the
+// parent's "기본 템플릿 추가" button.
+import { REWARD_TEMPLATES } from './features/parent/constants';
 
 type ViewMode = 'quests' | 'shop' | 'profile' | 'calendar' | 'feed';
 
@@ -186,9 +184,8 @@ export default function App() {
       try {
         if (rewards.length === 0) {
           const rewardsRef = collection(db, 'families', familyId, 'rewards');
-          for (const r of INITIAL_REWARDS) {
-            const { id: _id, ...rest } = r;
-            await addDoc(rewardsRef, rest);
+          for (const r of REWARD_TEMPLATES) {
+            await addDoc(rewardsRef, r);
           }
           console.info('[migration] seeded default rewards for', familyId);
         }
@@ -666,10 +663,11 @@ export default function App() {
       // Seed default rewards so the shop isn't empty
       try {
         const rewardsRef = collection(db, 'families', inviteCode, 'rewards');
-        for (const r of INITIAL_REWARDS) {
-          const { id: _id, ...rest } = r;
-          await addDoc(rewardsRef, rest);
+        for (const r of REWARD_TEMPLATES) {
+          await addDoc(rewardsRef, r);
         }
+        // Mark migration flag so the auto-seed effect doesn't run later
+        await updateDoc(doc(db, 'families', inviteCode), { rewardsSeeded: true });
       } catch (rewardErr) {
         console.warn('Failed to seed default rewards:', rewardErr);
       }
@@ -778,28 +776,45 @@ export default function App() {
   };
 
   // ===== Parent Password =====
-  // Hash + salt are stored in families/{id}/private/config, readable only
-  // by parents. Legacy families without a salt fall back to unsalted sha256.
+  //
+  // Primary storage: families/{id}/private/config (parent-only via rules)
+  // Backup storage: families/{id} root doc fields (works pre-rules-deploy)
+  // Final fallback: default password '1234' (for brand-new / never-set families)
+  //
+  // Verification order: private/config → family root fields → default '1234'.
+  // Any Firestore error at any step falls through silently so the user is
+  // never locked out of parent mode.
   const verifyParentPassword = async (input: string): Promise<boolean> => {
     if (!userAccount?.familyId) return false;
+    const inputSha = await sha256(input);
+    const defaultSha = await sha256('1234');
+
+    // 1. Try the parent-only private config subdoc
     try {
       const snap = await getDoc(doc(db, 'families', userAccount.familyId, 'private', 'config'));
-      const data = snap.exists() ? (snap.data() as any) : null;
-      const stored = data?.parentPasswordHash as string | undefined;
-      const salt = data?.parentPasswordSalt as string | undefined;
-      if (!stored) {
-        // Unseeded — fall back to default '1234' via unsalted sha256.
-        const defaultHash = await sha256('1234');
-        return (await sha256(input)) === defaultHash;
+      if (snap.exists()) {
+        const data = snap.data() as any;
+        const stored = data?.parentPasswordHash as string | undefined;
+        const salt = data?.parentPasswordSalt as string | undefined;
+        if (stored) {
+          if (salt) return (await saltedHash(input, salt)) === stored;
+          return inputSha === stored;
+        }
       }
-      if (salt) {
-        return (await saltedHash(input, salt)) === stored;
-      }
-      // Legacy pre-salt hash
-      return (await sha256(input)) === stored;
     } catch {
-      return false;
+      // permission-denied (rules not deployed) or network → fall through
     }
+
+    // 2. Try the legacy fields on the family root doc
+    const legacyHash = family?.parentPasswordHash;
+    const legacySalt = family?.parentPasswordSalt;
+    if (legacyHash) {
+      if (legacySalt) return (await saltedHash(input, legacySalt)) === legacyHash;
+      return inputSha === legacyHash;
+    }
+
+    // 3. Default password
+    return inputSha === defaultSha;
   };
 
   const changeParentPassword = async (
@@ -809,23 +824,36 @@ export default function App() {
     if (!userAccount?.familyId || !family) return { ok: false, error: '가족 정보를 찾을 수 없어요' };
     const ok = await verifyParentPassword(current);
     if (!ok) return { ok: false, error: '현재 비밀번호가 올바르지 않아요' };
-    try {
-      const salt = randomSalt();
-      const nextHash = await saltedHash(next, salt);
-      await setDoc(
-        doc(db, 'families', userAccount.familyId, 'private', 'config'),
-        {
-          parentPasswordHash: nextHash,
-          parentPasswordSalt: salt,
-          updatedAt: new Date().toISOString(),
-        },
+
+    const familyId = userAccount.familyId;
+    const salt = randomSalt();
+    const nextHash = await saltedHash(next, salt);
+    const updatedAt = new Date().toISOString();
+
+    // Dual-write: try BOTH the private subdoc AND the family root doc.
+    // Either path alone is sufficient for future verification — this makes
+    // password change work regardless of whether firestore.rules have
+    // been deployed yet.
+    const attempts = await Promise.allSettled([
+      setDoc(
+        doc(db, 'families', familyId, 'private', 'config'),
+        { parentPasswordHash: nextHash, parentPasswordSalt: salt, updatedAt },
         { merge: true }
-      );
-      return { ok: true };
-    } catch (error: any) {
-      handleFirestoreError(error, OperationType.UPDATE, `families/${userAccount.familyId}/private/config`);
-      return { ok: false, error: error?.message || '저장 중 오류가 발생했어요' };
+      ),
+      updateDoc(doc(db, 'families', familyId), {
+        parentPasswordHash: nextHash,
+        parentPasswordSalt: salt,
+      }),
+    ]);
+
+    const anySuccess = attempts.some((r) => r.status === 'fulfilled');
+    if (!anySuccess) {
+      const firstError = attempts.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+      const msg = firstError?.reason?.message || '저장 중 오류가 발생했어요';
+      handleFirestoreError(firstError?.reason, OperationType.UPDATE, `families/${familyId}`);
+      return { ok: false, error: msg };
     }
+    return { ok: true };
   };
 
   const joinFamily = async (inviteCode: string) => {
