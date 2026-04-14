@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { auth, db, googleProvider } from './firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
-import { collection, doc, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc, query, where, getDocs, limit } from 'firebase/firestore';
 import type { Quest, QuestCategory, UserProfile, Reward, ChildProfile, Family } from './types';
 import { cn, getLevel, getProgressToNextLevel } from './lib/utils';
 import { OperationType, handleFirestoreError } from './lib/firestoreError';
@@ -910,33 +910,62 @@ export default function App() {
     return { ok: true };
   };
 
-  const joinFamily = async (inviteCode: string) => {
+  const joinFamily = async (rawCode: string) => {
     if (!user) return;
-    
+    // Normalize: strip whitespace, uppercase, keep only alnum.
+    // Pasted codes often carry newlines/spaces from clipboard managers,
+    // and users may type in lowercase — we want them all to work.
+    const code = (rawCode || '').replace(/\s+/g, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    if (!code) {
+      showAlert('가족 합류', '가족 코드를 입력해주세요.');
+      return;
+    }
+
     const performJoin = async () => {
       try {
-        const familyRef = doc(db, 'families', inviteCode);
-        const snap = await getDoc(familyRef);
-        if (snap.exists()) {
-          const familyData = snap.data() as Family;
-          await updateDoc(familyRef, {
-            [`members.${user.uid}`]: 'parent'
-          });
-          const userRef = doc(db, 'users', user.uid);
-          await updateDoc(userRef, { familyId: inviteCode });
-          showAlert('가족 합류 완료', `${familyData.name} 가족에 합류했습니다!`);
+        // 1) New format: families created after createFamily refactor use
+        //    the invite code as the document ID — try direct lookup first.
+        let familyId: string | null = null;
+        let familyData: Family | null = null;
+        const directSnap = await getDoc(doc(db, 'families', code));
+        if (directSnap.exists()) {
+          familyId = directSnap.id;
+          familyData = directSnap.data() as Family;
         } else {
-          showAlert('오류', '해당 코드를 가진 가족을 찾을 수 없습니다.');
+          // 2) Legacy format: older families used Firestore auto-IDs,
+          //    so we must query by the inviteCode field.
+          const q = query(
+            collection(db, 'families'),
+            where('inviteCode', '==', code),
+            limit(1)
+          );
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            familyId = snap.docs[0].id;
+            familyData = snap.docs[0].data() as Family;
+          }
         }
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, `families/${inviteCode}`);
+
+        if (!familyId || !familyData) {
+          showAlert('가족 찾기 실패', `'${code}' 코드를 가진 가족을 찾을 수 없어요. 코드를 다시 확인해주세요.`);
+          return;
+        }
+
+        await updateDoc(doc(db, 'families', familyId), {
+          [`members.${user.uid}`]: 'parent',
+        });
+        await updateDoc(doc(db, 'users', user.uid), { familyId });
+        showAlert('가족 합류 완료', `${familyData.name} 가족에 합류했어요!`);
+      } catch (error: any) {
+        showAlert('합류 실패', error?.message || '가족 합류 중 오류가 발생했어요.');
+        handleFirestoreError(error, OperationType.WRITE, `families/${code}`);
       }
     };
 
     if (userAccount?.familyId) {
       showConfirm(
-        '가족 이동 안내', 
-        '새로운 가족에 합류하면 기존 가족의 정보는 더 이상 보이지 않게 됩니다. 계속할까요?', 
+        '가족 이동 안내',
+        '새로운 가족에 합류하면 기존 가족의 정보는 더 이상 보이지 않게 됩니다. 계속할까요?',
         performJoin
       );
     } else {

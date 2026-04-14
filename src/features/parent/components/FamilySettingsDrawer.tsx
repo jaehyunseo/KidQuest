@@ -76,15 +76,22 @@ export function FamilySettingsDrawer({
     setChildName(profile.name);
   }, [profile.name]);
 
+  // Prefer inviteCode field over doc id. Legacy families use Firestore
+  // auto-IDs (20 chars) while their inviteCode is the 6-char code parents
+  // should actually share. New families have id === inviteCode so either
+  // works — but inviteCode is always the canonical shareable value.
+  const shareableCode = family?.inviteCode || family?.id || '';
+
   const handleCopyCode = () => {
-    navigator.clipboard.writeText(family?.id || '');
+    navigator.clipboard.writeText(shareableCode);
     showAlert('복사 완료', '가족 초대 코드가 클립보드에 복사되었습니다.');
   };
 
   const handleJoinFamily = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!joinCode.trim()) return;
-    onJoinFamily(joinCode.trim().toUpperCase());
+    const cleaned = joinCode.replace(/\s+/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (!cleaned) return;
+    onJoinFamily(cleaned);
     setJoinCode('');
     setShowJoin(false);
     onClose();
@@ -146,8 +153,8 @@ export function FamilySettingsDrawer({
                       초대 코드
                     </p>
                     <div className="flex items-center gap-2">
-                      <code className="flex-1 text-xs font-black font-mono truncate select-all">
-                        {family?.id}
+                      <code className="flex-1 text-base font-black font-mono truncate select-all tracking-widest">
+                        {shareableCode || '—'}
                       </code>
                       <button
                         onClick={handleCopyCode}

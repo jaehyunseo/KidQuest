@@ -117,10 +117,21 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
             </div>
             <input
               type="text"
+              inputMode="text"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder="가족 코드 (예: ABCDEF)"
               value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
-              className="w-full border-2 border-slate-100 rounded-2xl px-6 py-4 outline-none focus:border-blue-400 bg-slate-50/50 font-black text-2xl tracking-[0.3em] text-center transition-all"
+              onChange={(e) =>
+                // Strip whitespace + non-alnum so paste from chat/email
+                // (which often carries surrounding spaces or newlines)
+                // lands cleanly. Cap at 6 since all invite codes are 6 chars.
+                setInviteCode(
+                  e.target.value.replace(/\s+/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6)
+                )
+              }
+              className="w-full border-2 border-slate-100 rounded-2xl px-6 py-4 outline-none focus:border-blue-400 bg-slate-50/50 font-black text-2xl tracking-[0.3em] text-center transition-all uppercase"
               maxLength={6}
             />
             <button
@@ -128,7 +139,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
                 playSound(SOUNDS.CLICK);
                 onJoin(inviteCode);
               }}
-              disabled={inviteCode.length < 4}
+              disabled={inviteCode.length !== 6}
               className="w-full bg-blue-600 disabled:bg-slate-200 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-100 transition-all active:scale-[0.98]"
             >
               가족 합류하기
