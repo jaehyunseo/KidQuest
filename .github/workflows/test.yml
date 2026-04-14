@@ -1,0 +1,106 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-unit:
+    name: Lint + Unit Tests + Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Unit tests (pure logic)
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 3
+
+  rules-tests:
+    name: Firestore + Storage Rules
+    runs-on: ubuntu-latest
+    needs: lint-and-unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Firebase emulators require Java for Firestore + Storage
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Bypass the with-java wrapper on Linux CI (Java is already on PATH
+      # via setup-java), by calling firebase-tools directly.
+      - name: Firestore rules tests
+        run: npx firebase emulators:exec --only firestore --project kidquest-ci "node scripts/test-rules.mjs"
+
+      - name: Storage rules tests
+        run: npx firebase emulators:exec --only storage --project kidquest-ci "node scripts/test-storage-rules.mjs"
+
+  smoke-test:
+    name: Build + Login Smoke
+    runs-on: ubuntu-latest
+    needs: lint-and-unit
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Start dev server + run smoke
+        run: |
+          npx vite --port=5199 --host=127.0.0.1 > /tmp/vite.log 2>&1 &
+          VITE_PID=$!
+          # Wait for dev server to become ready (up to 30s)
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:5199/ > /dev/null; then break; fi
+            sleep 1
+          done
+          SMOKE_URL=http://127.0.0.1:5199/ node scripts/smoke-extended.mjs
+          EXIT=$?
+          kill $VITE_PID 2>/dev/null || true
+          exit $EXIT

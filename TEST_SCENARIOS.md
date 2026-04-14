@@ -4,6 +4,18 @@
 
 ## 자동 테스트 (이미 통과)
 
+### 테스트 매트릭스 요약
+
+| 레이어 | 스크립트 | 결과 | Java 필요? |
+|---|---|---|---|
+| 순수 로직 | `npm run test:unit` | **24/24 ✅** | ❌ |
+| 빌드 + 로그인 UI | `npm run test:smoke` | **14/14 ✅** | ❌ |
+| Firestore 규칙 | `npm run test:rules:ci` | **38/38 ✅** | ✅ |
+| Storage 규칙 | `npm run test:storage:ci` | **14/14 ✅** | ✅ |
+| 규칙 전체 | `npm run test:rules:all` | **52/52 ✅** | ✅ |
+| 에뮬레이터 통합 | `node scripts/test-emulator-integration.mjs` | **8/8 ✅** | ✅ |
+| **총합** | | **112/112 ✅** | |
+
 ### 단위 테스트 — `node scripts/unit-tests.mjs`
 **24/24 통과** — 순수 로직은 검증됨.
 
