@@ -111,11 +111,20 @@ export function FamilySettingsDrawer({
   const isOwner = !!(family?.ownerUid && currentUid && family.ownerUid === currentUid);
   const memberEntries: Array<{ uid: string; role: 'parent' | 'child'; name: string }> =
     family?.members
-      ? Object.entries(family.members).map(([uid, role]) => ({
-          uid,
-          role: role as 'parent' | 'child',
-          name: family.memberNames?.[uid] || uid.slice(0, 6),
-        }))
+      ? Object.entries(family.members).map(([uid, role]) => {
+          // Prefer the denormalized name stored in the family doc. For the
+          // current user specifically, fall back to their live user-account
+          // name (never a raw uid fragment) so self-edits reflect even if
+          // the family.memberNames map is stale or missing.
+          const isSelf = uid === currentUid;
+          const denorm = family.memberNames?.[uid];
+          const fallback = isSelf ? currentUserName : '';
+          return {
+            uid,
+            role: role as 'parent' | 'child',
+            name: denorm || fallback || `멤버-${uid.slice(0, 4)}`,
+          };
+        })
       : [];
 
   const handleJoinFamily = (e: React.FormEvent) => {

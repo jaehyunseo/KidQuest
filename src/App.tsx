@@ -193,6 +193,42 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userAccount?.familyId, family?.rewardsSeeded]);
 
+  // Self-heal legacy families: if the current user is the owner and the
+  // family doc is missing either the childInviteCode or parentInviteCode
+  // (docs created before the dual-code RBAC refactor), fill them in.
+  // Rules allow owner writes that don't touch ownerUid, so this lands
+  // silently on the next load for affected families.
+  const codeHealRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!user || !family?.id) return;
+    if (family.ownerUid !== user.uid) return; // only owner heals
+    const needsChild = !family.childInviteCode;
+    const needsParent = !family.parentInviteCode;
+    const needsMemberNames = !family.memberNames || !family.memberNames[user.uid];
+    if (!needsChild && !needsParent && !needsMemberNames) return;
+    if (codeHealRef.current.has(family.id)) return;
+    codeHealRef.current.add(family.id);
+    const patch: Record<string, any> = {};
+    if (needsChild) {
+      let cc = Math.random().toString(36).substring(2, 8).toUpperCase();
+      while (cc === (family.parentInviteCode || family.inviteCode || family.id)) {
+        cc = Math.random().toString(36).substring(2, 8).toUpperCase();
+      }
+      patch.childInviteCode = cc;
+    }
+    if (needsParent) {
+      patch.parentInviteCode = family.inviteCode || family.id;
+    }
+    if (needsMemberNames) {
+      const fallbackName = userAccount?.name || user.email || '부모';
+      patch[`memberNames.${user.uid}`] = fallbackName;
+    }
+    updateDoc(doc(db, 'families', family.id), patch).catch((err) => {
+      console.warn('[heal] family code self-heal failed:', err);
+      codeHealRef.current.delete(family.id); // allow retry on next effect run
+    });
+  }, [user, family, userAccount?.name]);
+
   // Migration: populate `lifetimeEarned` for children created before the
   // field existed. We compute it from the history subcollection (sum of
   // all positive-point entries, i.e. quest completions only — reward
@@ -1253,22 +1289,29 @@ export default function App() {
     }
     try {
       await updateDoc(doc(db, 'users', user.uid), { name: trimmed });
-      // Best-effort denormalization into the family doc so the member list
-      // in the settings drawer reflects the new name immediately. Skipped
-      // when the user isn't in a family yet.
-      if (family?.id) {
-        try {
-          await updateDoc(doc(db, 'families', family.id), {
-            [`memberNames.${user.uid}`]: trimmed,
-          });
-        } catch (famErr) {
-          console.warn('[name] family memberNames sync failed:', famErr);
-        }
-      }
-      showAlert('저장 완료', '이름이 변경되었어요.');
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+      return;
     }
+    // Denormalize into the family doc so the member list reflects the new
+    // name without a page reload. We surface failures explicitly because
+    // silently swallowing them was masking a rules-layer bug where legacy
+    // families without a memberNames map rejected the update.
+    if (family?.id) {
+      try {
+        await updateDoc(doc(db, 'families', family.id), {
+          [`memberNames.${user.uid}`]: trimmed,
+        });
+      } catch (famErr) {
+        console.error('[name] family memberNames sync failed:', famErr);
+        showAlert(
+          '일부 저장 실패',
+          '이름은 저장됐지만 가족 멤버 리스트에는 반영되지 않았어요. 잠시 후 다시 시도해주세요.'
+        );
+        return;
+      }
+    }
+    showAlert('저장 완료', '이름이 변경되었어요.');
   };
 
   const removeFamilyMember = async (targetUid: string) => {
@@ -1879,11 +1922,21 @@ export default function App() {
         </nav>
       )}
 
-      {/* Custom Modal */}
+      {/* Custom Modal — outer wrapper MUST be motion + keyed so
+          AnimatePresence properly unmounts the backdrop on exit.
+          The previous plain <div> wrapper left the z-50 backdrop in the
+          DOM after close, silently eating clicks on the header gear
+          button and making the app look frozen. */}
       <AnimatePresence>
         {modal.isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-            <motion.div 
+          <motion.div
+            key="app-modal"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+          >
+            <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
@@ -1911,7 +1964,7 @@ export default function App() {
                 </button>
               </div>
             </motion.div>
-          </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
