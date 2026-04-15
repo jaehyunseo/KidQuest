@@ -1534,10 +1534,16 @@ export default function App() {
                 >
                   <input
                     type="password"
-                    placeholder="비밀번호 (기본 1234)"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={4}
+                    placeholder="••••"
                     value={parentPassword}
-                    onChange={(e) => setParentPassword(e.target.value)}
-                    className="w-full border-2 border-slate-100 rounded-2xl px-4 py-4 text-center text-3xl tracking-[1em] outline-none focus:border-yellow-400 transition-all bg-slate-50/50 font-black"
+                    onChange={(e) =>
+                      setParentPassword(e.target.value.replace(/\D/g, '').slice(0, 4))
+                    }
+                    autoFocus
+                    className="w-full border-2 border-slate-100 rounded-2xl px-4 py-4 text-center text-3xl tracking-[0.5em] outline-none focus:border-yellow-400 transition-all bg-slate-50/50 font-black placeholder:text-slate-300 placeholder:tracking-[0.3em]"
                   />
                   <div className="flex gap-3">
                     <button 

@@ -15,11 +15,13 @@ export function PasswordChangeForm({ onChange, showAlert }: PasswordChangeFormPr
   const [showNext, setShowNext] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const sanitize = (v: string) => v.replace(/\D/g, '').slice(0, 4);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (busy) return;
-    if (next.length < 4) {
-      showAlert('비밀번호 오류', '새 비밀번호는 4자 이상이어야 해요.');
+    if (next.length !== 4) {
+      showAlert('비밀번호 오류', '새 비밀번호는 숫자 4자리여야 해요.');
       return;
     }
     if (next !== confirm) {
@@ -44,10 +46,13 @@ export function PasswordChangeForm({ onChange, showAlert }: PasswordChangeFormPr
       <div className="relative">
         <input
           type={showCurrent ? 'text' : 'password'}
-          placeholder="현재 비밀번호"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={4}
+          placeholder="현재 비밀번호 (숫자 4자리)"
           value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-          className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 pr-10 outline-none focus:border-yellow-400 bg-slate-50/50 font-bold text-sm"
+          onChange={(e) => setCurrent(sanitize(e.target.value))}
+          className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 pr-10 outline-none focus:border-yellow-400 bg-slate-50/50 font-bold text-sm tracking-[0.3em]"
         />
         <button
           type="button"
@@ -61,10 +66,13 @@ export function PasswordChangeForm({ onChange, showAlert }: PasswordChangeFormPr
       <div className="relative">
         <input
           type={showNext ? 'text' : 'password'}
-          placeholder="새 비밀번호 (4자 이상)"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          maxLength={4}
+          placeholder="새 비밀번호 (숫자 4자리)"
           value={next}
-          onChange={(e) => setNext(e.target.value)}
-          className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 pr-10 outline-none focus:border-yellow-400 bg-slate-50/50 font-bold text-sm"
+          onChange={(e) => setNext(sanitize(e.target.value))}
+          className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 pr-10 outline-none focus:border-yellow-400 bg-slate-50/50 font-bold text-sm tracking-[0.3em]"
         />
         <button
           type="button"
@@ -77,10 +85,13 @@ export function PasswordChangeForm({ onChange, showAlert }: PasswordChangeFormPr
       </div>
       <input
         type={showNext ? 'text' : 'password'}
+        inputMode="numeric"
+        pattern="[0-9]*"
+        maxLength={4}
         placeholder="새 비밀번호 확인"
         value={confirm}
-        onChange={(e) => setConfirm(e.target.value)}
-        className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-yellow-400 bg-slate-50/50 font-bold text-sm"
+        onChange={(e) => setConfirm(sanitize(e.target.value))}
+        className="w-full border-2 border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-yellow-400 bg-slate-50/50 font-bold text-sm tracking-[0.3em]"
       />
       <button
         type="submit"
