@@ -13,11 +13,7 @@
     "test:unit": "node scripts/unit-tests.mjs",
     "test:smoke": "node scripts/smoke-extended.mjs",
     "test:rules": "node scripts/test-rules.mjs",
-    "test:rules:ci": "node scripts/with-java.mjs firebase emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
-    "test:storage": "node scripts/test-storage-rules.mjs",
-    "test:storage:ci": "node scripts/with-java.mjs firebase emulators:exec --only storage \"node scripts/test-storage-rules.mjs\"",
-    "test:rules:all": "node scripts/with-java.mjs firebase emulators:exec \"node scripts/run-all-rules-tests.mjs\"",
-    "emulators": "node scripts/with-java.mjs firebase emulators:start --only auth,firestore,storage"
+    "test:storage": "node scripts/test-storage-rules.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
