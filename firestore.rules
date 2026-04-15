@@ -122,6 +122,15 @@ service cloud.firestore {
       // access so that legacy docs missing the field don't error out the
       // whole rule (`undefined.diff(...)` throws and blocks the write).
       allow update: if isAdmin() ||
+        // Write-once ownerUid migration: legacy families created before
+        // the dual-code RBAC refactor have no ownerUid. A parent member
+        // of such a family may claim ownership exactly once. Subsequent
+        // edits go through the normal owner-path branch below.
+        (isAuthenticated() &&
+          !('ownerUid' in resource.data.keys()) &&
+          request.resource.data.get('ownerUid', '') == request.auth.uid &&
+          request.auth.uid in resource.data.get('members', {}) &&
+          resource.data.get('members', {})[request.auth.uid] == 'parent') ||
         (isOwnerOfFamily(familyId) &&
           request.resource.data.ownerUid == resource.data.ownerUid) ||
         (isParentOfFamily(familyId) &&

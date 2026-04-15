@@ -193,40 +193,81 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userAccount?.familyId, family?.rewardsSeeded]);
 
-  // Self-heal legacy families: if the current user is the owner and the
-  // family doc is missing either the childInviteCode or parentInviteCode
-  // (docs created before the dual-code RBAC refactor), fill them in.
-  // Rules allow owner writes that don't touch ownerUid, so this lands
-  // silently on the next load for affected families.
+  // Self-heal legacy families. Three separate heals, in order, because
+  // each one has a different rules-layer authorization path:
+  //
+  //  1. Write-once ownerUid claim (any parent member). Unlocks the owner
+  //     code path for everything else.
+  //  2. Owner fills in missing childInviteCode / parentInviteCode fields.
+  //  3. Any member writes their own memberNames[uid] entry so they
+  //     appear with a real name in the member list.
+  //
+  // Each step is idempotent and guarded by a ref so React StrictMode or
+  // rapid snapshot updates don't cause write storms.
   const codeHealRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!user || !family?.id) return;
-    if (family.ownerUid !== user.uid) return; // only owner heals
-    const needsChild = !family.childInviteCode;
-    const needsParent = !family.parentInviteCode;
-    const needsMemberNames = !family.memberNames || !family.memberNames[user.uid];
-    if (!needsChild && !needsParent && !needsMemberNames) return;
-    if (codeHealRef.current.has(family.id)) return;
-    codeHealRef.current.add(family.id);
-    const patch: Record<string, any> = {};
-    if (needsChild) {
-      let cc = Math.random().toString(36).substring(2, 8).toUpperCase();
-      while (cc === (family.parentInviteCode || family.inviteCode || family.id)) {
-        cc = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const selfUid = user.uid;
+    const myName = userAccount?.name || user.email || '';
+    const myRole = family.members?.[selfUid];
+    if (!myRole) return; // not a member yet
+
+    const fid = family.id;
+
+    // Step 1: claim ownerUid if missing and I'm a parent.
+    if (!family.ownerUid && myRole === 'parent') {
+      const claimKey = `${fid}:owner`;
+      if (!codeHealRef.current.has(claimKey)) {
+        codeHealRef.current.add(claimKey);
+        updateDoc(doc(db, 'families', fid), { ownerUid: selfUid }).catch((err) => {
+          console.warn('[heal] ownerUid claim failed:', err);
+          codeHealRef.current.delete(claimKey);
+        });
+        return; // wait for snapshot to reflect the claim before next heals
       }
-      patch.childInviteCode = cc;
     }
-    if (needsParent) {
-      patch.parentInviteCode = family.inviteCode || family.id;
+
+    // Step 2: owner fills code fields if missing.
+    if (family.ownerUid === selfUid) {
+      const needsChild = !family.childInviteCode;
+      const needsParent = !family.parentInviteCode;
+      if (needsChild || needsParent) {
+        const codeKey = `${fid}:codes`;
+        if (!codeHealRef.current.has(codeKey)) {
+          codeHealRef.current.add(codeKey);
+          const patch: Record<string, any> = {};
+          if (needsParent) patch.parentInviteCode = family.inviteCode || fid;
+          if (needsChild) {
+            let cc = Math.random().toString(36).substring(2, 8).toUpperCase();
+            while (cc === (family.parentInviteCode || family.inviteCode || fid)) {
+              cc = Math.random().toString(36).substring(2, 8).toUpperCase();
+            }
+            patch.childInviteCode = cc;
+          }
+          updateDoc(doc(db, 'families', fid), patch).catch((err) => {
+            console.warn('[heal] code fill failed:', err);
+            codeHealRef.current.delete(codeKey);
+          });
+        }
+      }
     }
-    if (needsMemberNames) {
-      const fallbackName = userAccount?.name || user.email || '부모';
-      patch[`memberNames.${user.uid}`] = fallbackName;
+
+    // Step 3: write my own memberNames entry if missing or stale. Works
+    // for both owners (via owner path) and non-owner members (via the
+    // join-flow self-slot rule). Skipped when there's no account name
+    // yet so we don't churn with empty strings.
+    if (myName && family.memberNames?.[selfUid] !== myName) {
+      const nameKey = `${fid}:name:${myName}`;
+      if (!codeHealRef.current.has(nameKey)) {
+        codeHealRef.current.add(nameKey);
+        updateDoc(doc(db, 'families', fid), {
+          [`memberNames.${selfUid}`]: myName,
+        }).catch((err) => {
+          console.warn('[heal] memberNames self write failed:', err);
+          codeHealRef.current.delete(nameKey);
+        });
+      }
     }
-    updateDoc(doc(db, 'families', family.id), patch).catch((err) => {
-      console.warn('[heal] family code self-heal failed:', err);
-      codeHealRef.current.delete(family.id); // allow retry on next effect run
-    });
   }, [user, family, userAccount?.name]);
 
   // Migration: populate `lifetimeEarned` for children created before the
