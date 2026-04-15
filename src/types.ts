@@ -34,7 +34,7 @@ export interface UserAccount {
   uid: string;
   email: string;
   name: string;
-  role: 'parent' | 'child';
+  role: 'parent' | 'child' | 'admin';
   familyId?: string;
   consentedAt?: string;
   consentVersion?: number;
@@ -189,3 +189,61 @@ export const CATEGORY_LABELS: Record<QuestCategory, string> = {
   habit: '나 돌보기',
   other: '특별한 미션',
 };
+
+// ============================================================
+// Admin
+// ============================================================
+
+export type AnnouncementSeverity = 'info' | 'warn';
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  severity: AnnouncementSeverity;
+  createdAt: string;       // ISO
+  createdBy: string;       // admin uid
+  expiresAt?: string;      // ISO, optional
+}
+
+export interface AdminAuditLog {
+  id: string;
+  actorUid: string;
+  actorEmail: string;
+  action: string;
+  targetPath: string;
+  meta?: Record<string, unknown>;
+  createdAt: string;       // ISO
+}
+
+export interface AdminStats {
+  totalFamilies: number;
+  totalUsers: number;
+  // Semantic user buckets (much more useful than raw role counts)
+  masters: number;          // users who are ownerUid of some family
+  coParents: number;        // parent role + in a family but not owner
+  authChildren: number;     // users.role === 'child'
+  admins: number;           // users.role === 'admin'
+  orphans: number;          // parent role without familyId
+  // Real children (ChildProfile docs, not Auth accounts)
+  totalChildProfiles: number;
+  // Quests
+  totalQuests: number;
+  completedQuests: number;
+  completionRate: number;   // 0..1
+  // Content
+  totalFeedPosts: number;
+  totalRewards: number;
+  // Consent
+  consentComplete: number;
+  consentMissing: number;
+  // Top families by completion
+  topFamilies: Array<{
+    familyId: string;
+    familyName: string;
+    childCount: number;
+    totalQuests: number;
+    completedQuests: number;
+  }>;
+}
+

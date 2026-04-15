@@ -42,6 +42,9 @@ const LazyParentDashboard = lazy(() =>
 const LazyCalendarView = lazy(() =>
   import('./features/child/CalendarView').then((m) => ({ default: m.CalendarView }))
 );
+const LazyAdminDashboard = lazy(() => import('./features/admin/AdminDashboard'));
+import { isAdminUser } from './lib/adminAuth';
+import { AnnouncementBanner } from './features/announcements/AnnouncementBanner';
 import { uploadChildAvatar, deleteChildAvatar } from './lib/storage';
 import { sha256, saltedHash, randomSalt } from './lib/hash';
 import {
@@ -49,6 +52,7 @@ import {
   localDateKey,
   nextStreak,
 } from './lib/achievements';
+import { evalPastWindow } from './lib/pastWindow';
 import { PrivacyConsentModal, type ConsentResult } from './features/auth/PrivacyConsentModal';
 import { CURRENT_CONSENT_VERSION } from './features/auth/consent';
 import { SOUNDS, playSound } from './lib/sound';
@@ -91,6 +95,32 @@ export default function App() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('quests');
   const [modal, setModal] = useState<ModalConfig>({ isOpen: false, title: '', message: '', type: 'alert' });
+
+  // Hidden admin route: `#/admin`
+  const [isAdminView, setIsAdminView] = useState<boolean>(
+    () => typeof window !== 'undefined' && window.location.hash === '#/admin'
+  );
+  useEffect(() => {
+    const h = () => setIsAdminView(window.location.hash === '#/admin');
+    window.addEventListener('hashchange', h);
+    return () => window.removeEventListener('hashchange', h);
+  }, []);
+
+  // Unauthorized admin access → force sign-out and bounce to login.
+  // Runs whenever user state resolves or the hash flips to /admin.
+  useEffect(() => {
+    if (!isAdminView) return;
+    if (!user || !userAccount) return; // still resolving
+    if (isAdminUser(userAccount, user)) return; // authorized — leave alone
+    (async () => {
+      try {
+        window.location.hash = '';
+        await signOut(auth);
+      } catch (err) {
+        console.warn('[admin] forced sign-out failed:', err);
+      }
+    })();
+  }, [isAdminView, user, userAccount]);
 
   const exitParentMode = () => {
     setIsParentMode(false);
@@ -304,11 +334,14 @@ export default function App() {
 
   // Daily quest auto-reset. When the local day rolls over, uncheck any
   // quest whose `completedAt` is before today — yesterday's points stay
-  // earned, but the checkboxes are fresh for the new day.
+  // earned, but the checkboxes are fresh for the new day. Quests with
+  // an explicit `scheduledDate` are date-pinned and must NOT be reset
+  // (otherwise retroactive completions would vanish overnight).
   useEffect(() => {
     if (!userAccount?.familyId || !selectedChildId || quests.length === 0) return;
     const staleQuests = quests.filter((q: any) => {
       if (!q.completed || !q.completedAt) return false;
+      if (q.scheduledDate) return false;
       return localDateKey(new Date(q.completedAt)) < dayKey;
     });
     if (staleQuests.length === 0) return;
@@ -450,18 +483,27 @@ export default function App() {
     const quest = quests.find(q => q.id === id);
     if (!quest) return;
 
-    // Date-scoped guard: only today's instances are toggleable. Past
-    // instances are immutable snapshots; future ones aren't meant to be
-    // visible in the child view at all.
-    if (quest.scheduledDate && quest.scheduledDate !== dayKey) {
+    // Date-scoped guard: today + last 7 days are toggleable (retroactive
+    // completion). Future-scheduled quests stay locked.
+    const PAST_WINDOW_DAYS = 7;
+    const decision = evalPastWindow(
+      quest.scheduledDate,
+      dayKey,
+      PAST_WINDOW_DAYS,
+    );
+    if (decision.allowed === false) {
       playSound(SOUNDS.ERROR);
-      if (quest.scheduledDate < dayKey) {
-        showAlert('지난 미션', '지난 날의 미션은 기록으로만 남아요. 오늘의 미션에 집중해볼까요?');
-      } else {
+      if (decision.reason === 'future') {
         showAlert('아직 이른 미션', '이 미션은 아직 시작할 수 없어요. 그날이 되면 다시 만나요!');
+      } else {
+        showAlert(
+          '지난 미션',
+          `${PAST_WINDOW_DAYS}일이 지난 미션은 기록으로만 남아요. 더 최근의 미션부터 정리해볼까요?`,
+        );
       }
       return;
     }
+    const { isPastScheduled, effectiveTimestamp } = decision;
 
     const newCompleted = !quest.completed;
     const familyId = userAccount.familyId;
@@ -471,13 +513,15 @@ export default function App() {
       playSound(SOUNDS.SUCCESS);
       const batch = writeBatch(db);
 
-      // Streak bookkeeping
+      // Streak bookkeeping. Retroactive (past-scheduled) completions
+      // don't advance today's streak — only real same-day completions do.
       const today = localDateKey();
-      const { streak: newStreak, touched } = nextStreak(
+      const { streak: computedStreak, touched } = nextStreak(
         profile.streak,
         profile.lastCompletedDate,
         today
       );
+      const newStreak = isPastScheduled ? (profile.streak ?? 0) : computedStreak;
       const longest = Math.max(profile.longestStreak ?? 0, newStreak);
       const newTotalCompleted = (profile.totalCompleted ?? 0) + 1;
       const newTotalPoints = profile.totalPoints + quest.points;
@@ -504,17 +548,20 @@ export default function App() {
       // Update Quest
       batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), {
         completed: true,
-        completedAt: new Date().toISOString()
+        completedAt: effectiveTimestamp,
       });
 
-      // Update Profile: points + streak + achievements
+      // Update Profile: points + streak + achievements. For retroactive
+      // completions leave lastCompletedDate untouched.
       batch.update(doc(db, 'families', familyId, 'children', childId), {
         totalPoints: newTotalPoints,
         lifetimeEarned: newLifetimeEarned,
         totalCompleted: newTotalCompleted,
         streak: newStreak,
         longestStreak: longest,
-        lastCompletedDate: touched ? today : (profile.lastCompletedDate ?? today),
+        lastCompletedDate: isPastScheduled
+          ? (profile.lastCompletedDate ?? today)
+          : (touched ? today : (profile.lastCompletedDate ?? today)),
         achievements: mergedAchievements,
       });
 
@@ -525,7 +572,7 @@ export default function App() {
         title: quest.title,
         points: quest.points,
         category: quest.category,
-        timestamp: new Date().toISOString()
+        timestamp: effectiveTimestamp,
       });
 
       try {
@@ -610,40 +657,56 @@ export default function App() {
         }, 400);
       }
     } else {
-      playSound(SOUNDS.CLICK);
-      const batch = writeBatch(db);
-      
-      // Update Quest
-      batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), { 
-        completed: false, 
-        completedAt: null 
-      });
-      
-      // Update Profile Points. Also roll back lifetimeEarned so parents
-      // unchecking an accidentally-marked quest don't let the child keep
-      // inflated lifetime progress. Clamp at 0 in case of legacy data.
-      const rolledBackLifetime = Math.max(
-        0,
-        (profile.lifetimeEarned ?? profile.totalPoints) - quest.points
-      );
-      batch.update(doc(db, 'families', familyId, 'children', childId), {
-        totalPoints: profile.totalPoints - quest.points,
-        lifetimeEarned: rolledBackLifetime,
-      });
+      // Uncheck flow. The current balance may go negative if the child
+      // already spent points in the shop — that's allowed (so the
+      // running balance stays accurate), but warn the user first.
+      const projectedTotal = profile.totalPoints - quest.points;
+      const performUncheck = async () => {
+        playSound(SOUNDS.CLICK);
+        const batch = writeBatch(db);
 
-      // Remove History (find today's record for this quest)
-      const today = new Date().toDateString();
-      const recordToDelete = history.find(h => 
-        h.questId === quest.id && new Date(h.timestamp).toDateString() === today
-      );
-      if (recordToDelete) {
-        batch.delete(doc(db, 'families', familyId, 'children', childId, 'history', recordToDelete.id));
-      }
+        batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), {
+          completed: false,
+          completedAt: null,
+        });
 
-      try {
-        await batch.commit();
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, `families/${familyId}/children/${childId}`);
+        // lifetimeEarned drives level — keep monotonic, clamp at 0.
+        const rolledBackLifetime = Math.max(
+          0,
+          (profile.lifetimeEarned ?? profile.totalPoints) - quest.points,
+        );
+        batch.update(doc(db, 'families', familyId, 'children', childId), {
+          totalPoints: projectedTotal,
+          lifetimeEarned: rolledBackLifetime,
+        });
+
+        // Remove History. For retroactive quests, match the past-day record;
+        // otherwise match today's record for this quest.
+        const targetDayString = isPastScheduled
+          ? new Date(`${quest.scheduledDate}T12:00:00`).toDateString()
+          : new Date().toDateString();
+        const recordToDelete = history.find(h =>
+          h.questId === quest.id && new Date(h.timestamp).toDateString() === targetDayString
+        );
+        if (recordToDelete) {
+          batch.delete(doc(db, 'families', familyId, 'children', childId, 'history', recordToDelete.id));
+        }
+
+        try {
+          await batch.commit();
+        } catch (error) {
+          handleFirestoreError(error, OperationType.WRITE, `families/${familyId}/children/${childId}`);
+        }
+      };
+
+      if (projectedTotal < 0) {
+        showConfirm(
+          '미션 취소',
+          `'${quest.title}' 완료를 취소할까요?\n${quest.points}P가 차감돼요.\n\n⚠️ 현재 잔액 ${profile.totalPoints}P에서 차감하면 ${projectedTotal}P (마이너스)가 돼요.`,
+          () => { void performUncheck(); },
+        );
+      } else {
+        await performUncheck();
       }
     }
   };
@@ -662,6 +725,79 @@ export default function App() {
     }
   };
 
+  // Add a backdated completion for a quest on a past day from the
+  // calendar view. Only allowed for dates within the last 7 days and
+  // strictly in the past (today's completions still go through
+  // toggleQuest in the mission list to keep one source of truth for
+  // streak/group-bonus). Backdated entries credit points and create a
+  // history record dated to the chosen day, but do NOT advance streak.
+  const addBackdatedCompletion = async (questId: string, dateKey: string) => {
+    if (!user || !userAccount?.familyId || !selectedChildId) return;
+    const quest = quests.find(q => q.id === questId);
+    if (!quest) return;
+    if (dateKey >= dayKey) {
+      // Today and future are not handled here.
+      return;
+    }
+    const decision = evalPastWindow(dateKey, dayKey, 7);
+    if (decision.allowed === false) {
+      playSound(SOUNDS.ERROR);
+      showAlert(
+        '수정 불가',
+        decision.reason === 'future'
+          ? '미래 날짜는 미리 등록할 수 없어요.'
+          : '7일이 지난 날짜는 수정할 수 없어요.',
+      );
+      return;
+    }
+    // Guard against double-credit: if a history entry for this quest
+    // already exists on this day, do nothing. The user can remove it
+    // first via the X button.
+    const targetDayString = new Date(`${dateKey}T12:00:00`).toDateString();
+    const existing = history.find(
+      h => h.questId === questId && new Date(h.timestamp).toDateString() === targetDayString,
+    );
+    if (existing) return;
+
+    const familyId = userAccount.familyId;
+    const childId = selectedChildId;
+    const ts = new Date(`${dateKey}T12:00:00`).toISOString();
+
+    const batch = writeBatch(db);
+    const newTotalCompleted = (profile.totalCompleted ?? 0) + 1;
+    const newTotalPoints = profile.totalPoints + quest.points;
+    const newLifetimeEarned =
+      (profile.lifetimeEarned ?? profile.totalPoints) + quest.points;
+
+    batch.update(doc(db, 'families', familyId, 'children', childId), {
+      totalPoints: newTotalPoints,
+      lifetimeEarned: newLifetimeEarned,
+      totalCompleted: newTotalCompleted,
+    });
+
+    const historyRef = doc(
+      collection(db, 'families', familyId, 'children', childId, 'history'),
+    );
+    batch.set(historyRef, {
+      questId: quest.id,
+      title: quest.title,
+      points: quest.points,
+      category: quest.category,
+      timestamp: ts,
+    });
+
+    try {
+      await batch.commit();
+      playSound(SOUNDS.SUCCESS);
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.WRITE,
+        `families/${familyId}/children/${childId}/history`,
+      );
+    }
+  };
+
   const deleteQuest = (id: string) => {
     if (!userAccount?.familyId || !selectedChildId) return;
     const quest = quests.find(q => q.id === id);
@@ -673,6 +809,95 @@ export default function App() {
         handleFirestoreError(error, OperationType.DELETE, `families/${userAccount.familyId}/children/${selectedChildId}/quests/${id}`);
       }
     });
+  };
+
+  // Cancel a past quest completion from the calendar. Only allowed for
+  // records within the last 7 days — older records are immutable. The
+  // current point balance IS allowed to go negative (so the running
+  // balance reflects reality after a reward purchase), but we warn the
+  // user up-front when a cancellation would push it below zero.
+  // `lifetimeEarned` and `totalCompleted` are monotonic counters and
+  // remain clamped at 0.
+  const removeHistoryRecord = async (recordId: string) => {
+    if (!user || !userAccount?.familyId || !selectedChildId) return;
+    const record = history.find(h => h.id === recordId);
+    if (!record) return;
+    // Reward purchases and admin penalty records are never editable
+    // from the calendar — they belong to the shop / parent flows.
+    if (record.type === 'reward' || record.type === 'penalty') {
+      showAlert('수정 불가', '상점 구매와 패널티 기록은 캘린더에서 취소할 수 없어요.');
+      return;
+    }
+    const recordDayKey = localDateKey(new Date(record.timestamp));
+    const decision = evalPastWindow(recordDayKey, dayKey, 7);
+    if (decision.allowed === false) {
+      playSound(SOUNDS.ERROR);
+      if (decision.reason === 'future') {
+        showAlert('수정 불가', '미래 날짜의 기록은 다룰 수 없어요.');
+      } else {
+        showAlert('수정 불가', '7일이 지난 기록은 취소할 수 없어요. 기록은 그대로 남아요.');
+      }
+      return;
+    }
+
+    const projectedTotal = profile.totalPoints - record.points;
+    const willGoNegative = record.points > 0 && projectedTotal < 0;
+    const baseLine = record.points > 0
+      ? `'${record.title}' 기록을 취소할까요?\n${record.points}P가 차감돼요.`
+      : `'${record.title}' 기록을 취소할까요?`;
+    const confirmMessage = willGoNegative
+      ? `${baseLine}\n\n⚠️ 현재 잔액 ${profile.totalPoints}P에서 차감하면 ${projectedTotal}P (마이너스)가 돼요. 그래도 취소할까요?`
+      : baseLine;
+
+    showConfirm(
+      '기록 취소',
+      confirmMessage,
+      async () => {
+        const familyId = userAccount.familyId!;
+        const childId = selectedChildId!;
+        const batch = writeBatch(db);
+        if (record.points > 0) {
+          // totalPoints reflects the live spendable balance and may go
+          // negative after a reward purchase + cancellation combo —
+          // user has been warned in the confirm dialog above.
+          const rolledTotal = profile.totalPoints - record.points;
+          // lifetimeEarned drives level — keep monotonic, clamp at 0.
+          const rolledLifetime = Math.max(
+            0,
+            (profile.lifetimeEarned ?? profile.totalPoints) - record.points,
+          );
+          const rolledCompleted = Math.max(0, (profile.totalCompleted ?? 0) - 1);
+          batch.update(doc(db, 'families', familyId, 'children', childId), {
+            totalPoints: rolledTotal,
+            lifetimeEarned: rolledLifetime,
+            totalCompleted: rolledCompleted,
+          });
+        }
+        // If the record's quest is still in the collection AND it was
+        // completed today, also flip its `completed` flag back. Past-day
+        // records for already-reset daily quests don't need this.
+        if (record.questId && recordDayKey === dayKey) {
+          const liveQuest = quests.find(q => q.id === record.questId);
+          if (liveQuest?.completed) {
+            batch.update(
+              doc(db, 'families', familyId, 'children', childId, 'quests', record.questId),
+              { completed: false, completedAt: null, groupBonusClaimed: false },
+            );
+          }
+        }
+        batch.delete(doc(db, 'families', familyId, 'children', childId, 'history', recordId));
+        try {
+          await batch.commit();
+          playSound(SOUNDS.CLICK);
+        } catch (error) {
+          handleFirestoreError(
+            error,
+            OperationType.WRITE,
+            `families/${familyId}/children/${childId}/history/${recordId}`,
+          );
+        }
+      },
+    );
   };
 
   // Assign / unassign a quest to a group. `groupId=null` clears the link.
@@ -1593,6 +1818,30 @@ export default function App() {
     );
   }
 
+  if (isAdminView) {
+    if (!isAdminUser(userAccount, user)) {
+      // Effect above is signing out + clearing hash. Show a spinner
+      // while that races to completion instead of a blank screen.
+      return (
+        <div className="min-h-screen bg-[#FDFCF0] flex flex-col items-center justify-center gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400"></div>
+          <div className="text-sm text-slate-500">권한이 없습니다. 로그아웃 중…</div>
+        </div>
+      );
+    }
+    return (
+      <Suspense
+        fallback={
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-slate-600"></div>
+          </div>
+        }
+      >
+        <LazyAdminDashboard />
+      </Suspense>
+    );
+  }
+
   if (!userAccount.familyId) {
     return (
       <>
@@ -1613,6 +1862,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#FDFCF0] font-sans text-slate-900 pb-24 md:pb-0 md:pl-24">
+      <AnnouncementBanner />
       {/* Header */}
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 md:px-8 py-4 sticky top-0 z-30 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-3">
@@ -1834,7 +2084,14 @@ export default function App() {
                 </div>
                 <div className={cn("lg:col-span-4 mt-6 lg:mt-0", viewMode === 'quests' && "hidden lg:block")}>
                   <Suspense fallback={<div className="p-6 text-center text-slate-400 text-xs font-bold">달력을 불러오는 중...</div>}>
-                    <LazyCalendarView history={history} customCategories={customCategories} />
+                    <LazyCalendarView
+                      history={history}
+                      customCategories={customCategories}
+                      dayKey={dayKey}
+                      quests={quests}
+                      onRemoveRecord={removeHistoryRecord}
+                      onAddBackdated={addBackdatedCompletion}
+                    />
                   </Suspense>
                 </div>
               </motion.div>

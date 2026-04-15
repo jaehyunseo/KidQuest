@@ -1,17 +1,31 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Gift, AlertTriangle, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Gift, AlertTriangle, Sparkles, X, Lock, CheckCircle2, Circle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { type CustomCategory, type HistoryRecord } from '../../types';
+import { type CustomCategory, type HistoryRecord, type Quest } from '../../types';
 import { cn } from '../../lib/utils';
 import { CategoryIcon } from '../../components/CategoryIcon';
 import { resolveCategory } from '../../lib/categoryDisplay';
+import { localDateKey } from '../../lib/achievements';
 
 interface CalendarViewProps {
   history: HistoryRecord[];
   customCategories: CustomCategory[];
+  dayKey: string;
+  quests: Quest[];
+  onRemoveRecord: (recordId: string) => void;
+  onAddBackdated: (questId: string, dateKey: string) => void;
 }
 
-export function CalendarView({ history, customCategories }: CalendarViewProps) {
+const EDIT_WINDOW_DAYS = 7;
+
+export function CalendarView({
+  history,
+  customCategories,
+  dayKey,
+  quests,
+  onRemoveRecord,
+  onAddBackdated,
+}: CalendarViewProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string | null>(new Date().toDateString());
 
@@ -40,6 +54,43 @@ export function CalendarView({ history, customCategories }: CalendarViewProps) {
   }, [history]);
 
   const selectedDayData = selectedDate ? historyByDate[selectedDate] : null;
+
+  // Determine the dayKey (YYYY-MM-DD) of the selected calendar cell so we
+  // can compare it against today + the 7-day edit window.
+  const selectedKey = useMemo(
+    () => (selectedDate ? localDateKey(new Date(selectedDate)) : null),
+    [selectedDate],
+  );
+  const minEditableKey = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - EDIT_WINDOW_DAYS);
+    return localDateKey(d);
+  }, [dayKey]);
+  const isFutureSelected = !!selectedKey && selectedKey > dayKey;
+  const isPastSelected = !!selectedKey && selectedKey < dayKey;
+  const isEditableSelected =
+    !!selectedKey && selectedKey >= minEditableKey && selectedKey <= dayKey;
+  const isPastEditable = isPastSelected && isEditableSelected;
+
+  // Build the per-day quest checklist for past-date inspection.
+  // For each existing quest in the collection, find any history record
+  // for this quest on the selected date. If found → completed for that
+  // day (with the record id so we can cancel it). Quest items without a
+  // matching record are unchecked. The list is only shown for past dates
+  // (today is edited via the mission list to avoid double-credit).
+  const dayQuestChecklist = useMemo(() => {
+    if (!selectedDate || !isPastSelected) return [];
+    return quests
+      .filter((q) => !!q.title)
+      .map((q) => {
+        const matched = history.find(
+          (h) =>
+            h.questId === q.id &&
+            new Date(h.timestamp).toDateString() === selectedDate,
+        );
+        return { quest: q, recordId: matched?.id ?? null };
+      });
+  }, [selectedDate, isPastSelected, quests, history]);
 
   return (
     <div className="space-y-6">
@@ -128,12 +179,110 @@ export function CalendarView({ history, customCategories }: CalendarViewProps) {
               )}
             </div>
 
-            {selectedDayData ? (
+            {!isEditableSelected && !isFutureSelected && selectedKey && (
+              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 bg-slate-100 border border-slate-200 rounded-xl px-3 py-2">
+                <Lock size={12} />
+                <span>7일이 지난 기록은 조회만 가능해요.</span>
+              </div>
+            )}
+            {isFutureSelected && (
+              <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center">
+                <p className="text-slate-400 text-sm font-medium">미래 날짜는 미리 등록할 수 없어요.</p>
+              </div>
+            )}
+
+            {/* Past-day quest checklist — shows what was supposed to be
+                done on the selected past day with each quest's completion
+                state. Within 7 days the items are toggleable; outside the
+                window they're read-only. */}
+            {isPastSelected && dayQuestChecklist.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-black text-sm text-slate-700">이 날의 미션</h4>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    {dayQuestChecklist.filter((it) => it.recordId).length} / {dayQuestChecklist.length} 완료
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {dayQuestChecklist.map(({ quest, recordId }) => {
+                    const cat = resolveCategory(quest.category, customCategories);
+                    const isDone = !!recordId;
+                    const interactive = isPastEditable;
+                    return (
+                      <button
+                        key={quest.id}
+                        type="button"
+                        disabled={!interactive}
+                        onClick={() => {
+                          if (!interactive || !selectedKey) return;
+                          if (isDone && recordId) {
+                            onRemoveRecord(recordId);
+                          } else {
+                            onAddBackdated(quest.id, selectedKey);
+                          }
+                        }}
+                        className={cn(
+                          'w-full flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition-all',
+                          isDone
+                            ? 'bg-slate-50 border-slate-100'
+                            : 'bg-white border-white shadow-sm',
+                          interactive
+                            ? 'hover:border-yellow-200 active:scale-[0.98] cursor-pointer'
+                            : 'opacity-70 cursor-not-allowed',
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'w-10 h-10 rounded-xl flex items-center justify-center shrink-0',
+                            isDone ? 'bg-slate-200 text-slate-400' : cat.color + ' text-white',
+                          )}
+                        >
+                          <CategoryIcon
+                            category={quest.category}
+                            customCategories={customCategories}
+                            size={18}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">
+                              {cat.label}
+                            </span>
+                            <span className="text-xs font-bold text-orange-500">+{quest.points}P</span>
+                          </div>
+                          <h3
+                            className={cn(
+                              'font-bold text-slate-800 text-sm truncate',
+                              isDone && 'line-through text-slate-400',
+                            )}
+                          >
+                            {quest.title}
+                          </h3>
+                        </div>
+                        <div
+                          className={cn(
+                            'w-7 h-7 rounded-full flex items-center justify-center transition-colors shrink-0',
+                            isDone ? 'bg-green-500 text-white' : 'border-2 border-slate-200 text-slate-200',
+                          )}
+                        >
+                          {isDone ? <CheckCircle2 size={18} /> : <Circle size={18} />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {!isFutureSelected && selectedDayData ? (
               <div className="space-y-2">
                 {selectedDayData.records.map((record) => {
                   const isPenalty = record.type === 'penalty';
                   const isBonus = record.type === 'group-bonus';
                   const isReward = record.type === 'reward';
+                  // Cancellation is allowed only within the 7-day window
+                  // and never for shop purchases / parent penalties.
+                  const canCancel =
+                    isEditableSelected && !isReward && !isPenalty;
                   return (
                   <div
                     key={record.id}
@@ -177,29 +326,41 @@ export function CalendarView({ history, customCategories }: CalendarViewProps) {
                         </p>
                       </div>
                     </div>
-                    <span
-                      className={cn(
-                        'text-xs font-black',
-                        isPenalty
-                          ? 'text-red-500'
-                          : isReward
-                            ? 'text-blue-500'
-                            : isBonus
-                              ? 'text-amber-600'
-                              : 'text-orange-500',
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'text-xs font-black',
+                          isPenalty
+                            ? 'text-red-500'
+                            : isReward
+                              ? 'text-blue-500'
+                              : isBonus
+                                ? 'text-amber-600'
+                                : 'text-orange-500',
+                        )}
+                      >
+                        {record.points > 0 ? '+' : ''}{record.points}P
+                      </span>
+                      {canCancel && (
+                        <button
+                          type="button"
+                          onClick={() => onRemoveRecord(record.id)}
+                          aria-label={`${record.title} 기록 취소`}
+                          className="w-7 h-7 rounded-full bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-500 flex items-center justify-center transition-colors"
+                        >
+                          <X size={14} />
+                        </button>
                       )}
-                    >
-                      {record.points > 0 ? '+' : ''}{record.points}P
-                    </span>
+                    </div>
                   </div>
                   );
                 })}
               </div>
-            ) : (
+            ) : !isFutureSelected ? (
               <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center">
                 <p className="text-slate-400 text-sm font-medium">이날은 기록이 없어요.</p>
               </div>
-            )}
+            ) : null}
           </motion.div>
         )}
       </AnimatePresence>

@@ -20,6 +20,7 @@ const exportCsv   = await tsImport('../src/lib/exportCsv.ts', import.meta.url);
 const reminders   = await tsImport('../src/lib/reminders.ts', import.meta.url);
 const hash        = await tsImport('../src/lib/hash.ts', import.meta.url);
 const materializer = await tsImport('../src/lib/questMaterializer.ts', import.meta.url);
+const pastWindow  = await tsImport('../src/lib/pastWindow.ts', import.meta.url);
 
 // Polyfill globals that some modules expect
 globalThis.localStorage = (() => {
@@ -309,5 +310,81 @@ describe('questMaterializer.ts — evaluateGroupBonus', () => {
     const r2 = evaluateGroupBonus('g2', '2026-04-15', all);
     assert.equal(r1.eligible, true);
     assert.equal(r2.eligible, false);
+  });
+});
+
+// ============================================================
+describe('pastWindow.ts — retroactive completion guard', () => {
+  const { evalPastWindow } = pastWindow;
+  // Anchor "now" at noon local on 2026-04-15 to keep tests deterministic
+  // across timezones. dayKey is computed from the SAME local date.
+  const NOW = new Date(2026, 3, 15, 12, 0, 0);
+  const DAY_KEY = '2026-04-15';
+
+  test('quest with no scheduledDate is always allowed and not past', () => {
+    const r = evalPastWindow(undefined, DAY_KEY, 7, NOW);
+    assert.equal(r.allowed, true);
+    if (r.allowed) {
+      assert.equal(r.isPastScheduled, false);
+      assert.equal(r.effectiveTimestamp, NOW.toISOString());
+    }
+  });
+
+  test('today-scheduled quest is allowed and not past', () => {
+    const r = evalPastWindow('2026-04-15', DAY_KEY, 7, NOW);
+    assert.equal(r.allowed, true);
+    if (r.allowed) {
+      assert.equal(r.isPastScheduled, false);
+      assert.equal(r.effectiveTimestamp, NOW.toISOString());
+    }
+  });
+
+  test('1-day-old quest is allowed, marked past, timestamp lands on that day', () => {
+    const r = evalPastWindow('2026-04-14', DAY_KEY, 7, NOW);
+    assert.equal(r.allowed, true);
+    if (r.allowed) {
+      assert.equal(r.isPastScheduled, true);
+      // toDateString roundtrip should match the scheduled day in local tz
+      assert.equal(
+        new Date(r.effectiveTimestamp).toDateString(),
+        new Date(2026, 3, 14, 12, 0, 0).toDateString(),
+      );
+    }
+  });
+
+  test('exactly 7-day-old quest is allowed (boundary inclusive)', () => {
+    const r = evalPastWindow('2026-04-08', DAY_KEY, 7, NOW);
+    assert.equal(r.allowed, true);
+  });
+
+  test('8-day-old quest is rejected as too-old', () => {
+    const r = evalPastWindow('2026-04-07', DAY_KEY, 7, NOW);
+    assert.equal(r.allowed, false);
+    if (!r.allowed) assert.equal(r.reason, 'too-old');
+  });
+
+  test('future-scheduled quest is rejected as future', () => {
+    const r = evalPastWindow('2026-04-16', DAY_KEY, 7, NOW);
+    assert.equal(r.allowed, false);
+    if (!r.allowed) assert.equal(r.reason, 'future');
+  });
+
+  test('past-day timestamp survives toDateString roundtrip (calendar key match)', () => {
+    // The CalendarView buckets history by `new Date(timestamp).toDateString()`.
+    // For retroactive completions to land on the right day, the noon-local
+    // construction must match the same toDateString as a Date for that day.
+    for (const dateStr of ['2026-04-09', '2026-04-10', '2026-04-13', '2026-04-15']) {
+      const r = evalPastWindow(dateStr, DAY_KEY, 7, NOW);
+      assert.equal(r.allowed, true, `${dateStr} should be allowed`);
+      if (r.allowed && r.isPastScheduled) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        const expected = new Date(y, m - 1, d, 12, 0, 0).toDateString();
+        assert.equal(
+          new Date(r.effectiveTimestamp).toDateString(),
+          expected,
+          `${dateStr} timestamp should bucket to its own calendar day`,
+        );
+      }
+    }
   });
 });
