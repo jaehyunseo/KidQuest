@@ -70,6 +70,8 @@ interface ParentDashboardProps {
   onJoinFamily: (code: string) => void;
   onRemoveMember: (uid: string) => void;
   currentUid: string | null;
+  currentUserName: string;
+  onUpdateMyName: (name: string) => void;
   onDeleteChild: (id: string, name: string) => void;
   showAlert: (title: string, message: string) => void;
   showOnboarding: boolean;
@@ -122,6 +124,8 @@ export function ParentDashboard(props: ParentDashboardProps) {
     onJoinFamily,
     onRemoveMember,
     currentUid,
+    currentUserName,
+    onUpdateMyName,
     onDeleteChild,
     showAlert,
     showOnboarding,
@@ -341,6 +345,8 @@ export function ParentDashboard(props: ParentDashboardProps) {
         onJoinFamily={onJoinFamily}
         onRemoveMember={onRemoveMember}
         currentUid={currentUid}
+        currentUserName={currentUserName}
+        onUpdateMyName={onUpdateMyName}
         onDeleteSelectedChild={() => {
           if (selectedChildId) {
             onDeleteChild(selectedChildId, profile.name);

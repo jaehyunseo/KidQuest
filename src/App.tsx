@@ -1240,6 +1240,37 @@ export default function App() {
     }
   };
 
+  const updateMyDisplayName = async (nextName: string) => {
+    if (!user) return;
+    const trimmed = nextName.trim();
+    if (!trimmed) {
+      showAlert('이름을 입력해주세요', '표시할 이름을 비워둘 수 없어요.');
+      return;
+    }
+    if (trimmed.length > 40) {
+      showAlert('이름이 너무 길어요', '40자 이내로 입력해주세요.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { name: trimmed });
+      // Best-effort denormalization into the family doc so the member list
+      // in the settings drawer reflects the new name immediately. Skipped
+      // when the user isn't in a family yet.
+      if (family?.id) {
+        try {
+          await updateDoc(doc(db, 'families', family.id), {
+            [`memberNames.${user.uid}`]: trimmed,
+          });
+        } catch (famErr) {
+          console.warn('[name] family memberNames sync failed:', famErr);
+        }
+      }
+      showAlert('저장 완료', '이름이 변경되었어요.');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
   const removeFamilyMember = async (targetUid: string) => {
     if (!user || !family) return;
     if (family.ownerUid !== user.uid) {
@@ -1667,6 +1698,8 @@ export default function App() {
               onJoinFamily={joinFamily}
               onRemoveMember={removeFamilyMember}
               currentUid={user?.uid || null}
+              currentUserName={userAccount?.name || ''}
+              onUpdateMyName={updateMyDisplayName}
               showAlert={showAlert}
               showOnboarding={showOnboarding}
               onDismissOnboarding={dismissOnboarding}

@@ -21,6 +21,8 @@ interface FamilySettingsDrawerProps {
   onJoinFamily: (code: string) => void;
   onRemoveMember: (uid: string) => void;
   currentUid: string | null;
+  currentUserName: string;
+  onUpdateMyName: (name: string) => void;
   onDeleteSelectedChild: () => void;
   onReset: () => void;
   onPointReset: () => void;
@@ -42,6 +44,8 @@ export function FamilySettingsDrawer({
   onJoinFamily,
   onRemoveMember,
   currentUid,
+  currentUserName,
+  onUpdateMyName,
   onDeleteSelectedChild,
   onReset,
   onPointReset,
@@ -54,6 +58,7 @@ export function FamilySettingsDrawer({
   const [showJoin, setShowJoin] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [childName, setChildName] = useState(profile.name);
+  const [myName, setMyName] = useState(currentUserName);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -79,6 +84,16 @@ export function FamilySettingsDrawer({
   useEffect(() => {
     setChildName(profile.name);
   }, [profile.name]);
+
+  useEffect(() => {
+    setMyName(currentUserName);
+  }, [currentUserName]);
+
+  const handleSaveMyName = () => {
+    if (myName.trim() && myName !== currentUserName) {
+      onUpdateMyName(myName.trim());
+    }
+  };
 
   // Two distinct invite codes — role is determined by which one was used.
   // parentInviteCode is also the family doc ID. childInviteCode is queried
@@ -148,6 +163,38 @@ export function FamilySettingsDrawer({
             </div>
 
             <div className="p-6 space-y-8">
+              <section className="space-y-3">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  내 프로필
+                </h3>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                    표시 이름
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={myName}
+                      onChange={(e) => setMyName(e.target.value)}
+                      onBlur={handleSaveMyName}
+                      placeholder="내 이름"
+                      maxLength={40}
+                      className="flex-1 border-2 border-slate-100 rounded-xl px-4 py-3 outline-none focus:border-blue-400 bg-slate-50/50 font-bold"
+                    />
+                    <button
+                      onClick={handleSaveMyName}
+                      disabled={!myName.trim() || myName === currentUserName}
+                      className="px-4 py-3 bg-blue-600 disabled:bg-slate-200 text-white font-black rounded-xl text-xs active:scale-95"
+                    >
+                      저장
+                    </button>
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-400">
+                    가족 멤버 리스트와 피드에 표시되는 이름이에요.
+                  </p>
+                </div>
+              </section>
+
               <section className="space-y-3">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                   가족
