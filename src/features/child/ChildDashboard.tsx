@@ -1,10 +1,16 @@
 import { useMemo } from 'react';
 import { Trophy, Sparkles, CheckCircle2, Circle, Flame } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { type CustomCategory, type Quest, type UserProfile } from '../../types';
+import {
+  type CustomCategory,
+  type Quest,
+  type QuestGroup,
+  type UserProfile,
+} from '../../types';
 import { cn } from '../../lib/utils';
 import { CategoryIcon } from '../../components/CategoryIcon';
 import { resolveCategory } from '../../lib/categoryDisplay';
+import { GroupProgressCard } from './GroupProgressCard';
 
 export function ChildDashboard({
   quests,
@@ -13,7 +19,8 @@ export function ChildDashboard({
   profile,
   encouragement,
   isLoadingAI,
-  onRefreshAI
+  onRefreshAI,
+  groups,
 }: {
   quests: Quest[],
   customCategories: CustomCategory[],
@@ -21,7 +28,8 @@ export function ChildDashboard({
   profile: UserProfile,
   encouragement: string,
   isLoadingAI: boolean,
-  onRefreshAI: () => void
+  onRefreshAI: () => void,
+  groups: QuestGroup[],
 }) {
   const sortedQuests = useMemo(() => {
     return [...quests].sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1));
@@ -71,6 +79,15 @@ export function ChildDashboard({
           <Sparkles size={16} />
         </button>
       </div>
+
+      {/* Quest Groups */}
+      {groups.length > 0 && (
+        <div className="space-y-3">
+          {groups.map((g) => (
+            <GroupProgressCard key={g.id} group={g} quests={quests} />
+          ))}
+        </div>
+      )}
 
       {/* Quest List */}
       <div className="space-y-4">

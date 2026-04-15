@@ -20,7 +20,8 @@ import confetti from 'canvas-confetti';
 import { auth, db, googleProvider } from './firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
 import { collection, doc, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc, query, where, getDocs, limit } from 'firebase/firestore';
-import type { Quest, QuestCategory, UserProfile, Reward, ChildProfile, Family } from './types';
+import type { QuestCategory, UserProfile, Reward, ChildProfile, Family, QuestGroup } from './types';
+import { evaluateGroupBonus } from './lib/questMaterializer';
 import { cn, getLevel, getProgressToNextLevel } from './lib/utils';
 import { OperationType, handleFirestoreError } from './lib/firestoreError';
 import { useAuth } from './hooks/useAuth';
@@ -61,13 +62,6 @@ import { ProfileView } from './features/child/ProfileView';
 import { FamilySetup } from './features/auth/FamilySetup';
 import { ChildDashboard } from './features/child/ChildDashboard';
 
-const INITIAL_QUESTS: Quest[] = [
-  { id: '1', title: '수학 익힘책 풀기', points: 10, category: 'homework', completed: false },
-  { id: '2', title: '엄마 도와서 설거지하기', points: 100, category: 'chore', completed: false },
-  { id: '3', title: '방 정리하기', points: 50, category: 'chore', completed: false },
-  { id: '4', title: '영어 단어 10개 외우기', points: 20, category: 'homework', completed: false },
-];
-
 // Default reward templates moved to features/parent/constants.ts
 // so they can be reused by createFamily, the migration effect, and the
 // parent's "기본 템플릿 추가" button.
@@ -86,7 +80,7 @@ type ModalConfig = {
 export default function App() {
   const { user, userAccount, isAuthReady } = useAuth();
   const { family, children, selectedChildId, setSelectedChildId } = useFamily(userAccount);
-  const { profile, setProfile, quests, history } = useChildData(userAccount?.familyId, selectedChildId);
+  const { profile, setProfile, quests, history, groups } = useChildData(userAccount?.familyId, selectedChildId);
   const rewards = useRewards(userAccount?.familyId);
   const customCategories = useCategories(userAccount?.familyId);
   const { posts: feedPosts, loading: feedLoading } = useFeed(userAccount?.familyId);
@@ -231,24 +225,22 @@ export default function App() {
       });
   }, [userAccount?.familyId, selectedChildId, profile?.lifetimeEarned, history]);
 
-  // Auto-reset quest checks when the local day rolls over.
-  // A quest is "stale" if it's marked completed but `completedAt` is before
-  // today's local date. We uncheck it WITHOUT subtracting points (yesterday's
-  // effort stays earned). Runs when `dayKey`, `quests`, or `selectedChildId`
-  // changes, so it fires both on mount and whenever midnight passes.
+  // Daily quest auto-reset. When the local day rolls over, uncheck any
+  // quest whose `completedAt` is before today — yesterday's points stay
+  // earned, but the checkboxes are fresh for the new day.
   useEffect(() => {
     if (!userAccount?.familyId || !selectedChildId || quests.length === 0) return;
-    const staleQuests = quests.filter((q) => {
+    const staleQuests = quests.filter((q: any) => {
       if (!q.completed || !q.completedAt) return false;
       return localDateKey(new Date(q.completedAt)) < dayKey;
     });
     if (staleQuests.length === 0) return;
     const run = async () => {
       const batch = writeBatch(db);
-      staleQuests.forEach((q) => {
+      staleQuests.forEach((q: any) => {
         batch.update(
           doc(db, 'families', userAccount.familyId!, 'children', selectedChildId, 'quests', q.id),
-          { completed: false, completedAt: null }
+          { completed: false, completedAt: null, groupBonusClaimed: false }
         );
       });
       try {
@@ -381,10 +373,23 @@ export default function App() {
     const quest = quests.find(q => q.id === id);
     if (!quest) return;
 
+    // Date-scoped guard: only today's instances are toggleable. Past
+    // instances are immutable snapshots; future ones aren't meant to be
+    // visible in the child view at all.
+    if (quest.scheduledDate && quest.scheduledDate !== dayKey) {
+      playSound(SOUNDS.ERROR);
+      if (quest.scheduledDate < dayKey) {
+        showAlert('지난 미션', '지난 날의 미션은 기록으로만 남아요. 오늘의 미션에 집중해볼까요?');
+      } else {
+        showAlert('아직 이른 미션', '이 미션은 아직 시작할 수 없어요. 그날이 되면 다시 만나요!');
+      }
+      return;
+    }
+
     const newCompleted = !quest.completed;
     const familyId = userAccount.familyId;
     const childId = selectedChildId;
-    
+
     if (newCompleted) {
       playSound(SOUNDS.SUCCESS);
       const batch = writeBatch(db);
@@ -458,6 +463,62 @@ export default function App() {
         origin: { y: 0.6 },
         colors: ['#FFD700', '#FFA500', '#FF4500']
       });
+
+      // Group bonus: if this quest belongs to a group and completing it
+      // closes out every sibling for today (and none has claimed the bonus
+      // yet), award bonus points once.
+      if (quest.groupId) {
+        // Re-evaluate with the local post-toggle projection so we don't
+        // wait for the snapshot round-trip.
+        const projected = quests.map((q) =>
+          q.id === quest.id ? { ...q, completed: true } : q,
+        );
+        const { eligible, siblings } = evaluateGroupBonus(
+          quest.groupId,
+          dayKey,
+          projected,
+        );
+        const group = groups.find((g) => g.id === quest.groupId);
+        if (eligible && group && group.bonusPoints > 0) {
+          const bonusBatch = writeBatch(db);
+          siblings.forEach((s) => {
+            bonusBatch.update(
+              doc(db, 'families', familyId, 'children', childId, 'quests', s.id),
+              { groupBonusClaimed: true },
+            );
+          });
+          bonusBatch.update(doc(db, 'families', familyId, 'children', childId), {
+            totalPoints: newTotalPoints + group.bonusPoints,
+            lifetimeEarned: newLifetimeEarned + group.bonusPoints,
+          });
+          const bonusHistoryRef = doc(
+            collection(db, 'families', familyId, 'children', childId, 'history'),
+          );
+          bonusBatch.set(bonusHistoryRef, {
+            type: 'group-bonus',
+            groupId: group.id,
+            title: `${group.icon || '🏆'} ${group.title} 완성 보너스`,
+            points: group.bonusPoints,
+            timestamp: new Date().toISOString(),
+          });
+          try {
+            await bonusBatch.commit();
+            playSound(SOUNDS.CELEBRATE);
+            confetti({
+              particleCount: 220,
+              spread: 120,
+              origin: { y: 0.5 },
+              colors: ['#FFD700', '#FF69B4', '#8B5CF6', '#3B82F6'],
+            });
+            showAlert(
+              '🎉 그룹 보너스!',
+              `${group.title}을(를) 모두 완료해서 +${group.bonusPoints}P 보너스를 받았어요!`,
+            );
+          } catch (bonusErr) {
+            console.warn('[group-bonus] failed to award', bonusErr);
+          }
+        }
+      }
 
       // Celebrate newly-unlocked badges via the dedicated modal queue
       if (newBadges.length) {
@@ -535,6 +596,188 @@ export default function App() {
         handleFirestoreError(error, OperationType.DELETE, `families/${userAccount.familyId}/children/${selectedChildId}/quests/${id}`);
       }
     });
+  };
+
+  // Assign / unassign a quest to a group. `groupId=null` clears the link.
+  const setQuestGroup = async (questId: string, groupId: string | null) => {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    try {
+      const ref = doc(
+        db,
+        'families',
+        userAccount.familyId,
+        'children',
+        selectedChildId,
+        'quests',
+        questId,
+      );
+      await updateDoc(ref, { groupId: groupId ?? null });
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `families/${userAccount.familyId}/children/${selectedChildId}/quests/${questId}`,
+      );
+    }
+  };
+
+  // ---------------- Quest Groups ----------------
+  // Returns the new group id so the caller can atomically attach quests.
+  const addGroup = async (
+    data: Omit<QuestGroup, 'id' | 'createdAt'>,
+    questIds: string[] = [],
+  ): Promise<string | null> => {
+    if (!userAccount?.familyId || !selectedChildId) return null;
+    try {
+      const familyId = userAccount.familyId;
+      const childId = selectedChildId;
+      const groupsRef = collection(
+        db,
+        'families',
+        familyId,
+        'children',
+        childId,
+        'questGroups',
+      );
+      const newGroupRef = doc(groupsRef);
+      const batch = writeBatch(db);
+      batch.set(newGroupRef, {
+        ...data,
+        id: newGroupRef.id,
+        createdAt: new Date().toISOString(),
+      });
+      questIds.forEach((qid) => {
+        batch.update(
+          doc(db, 'families', familyId, 'children', childId, 'quests', qid),
+          { groupId: newGroupRef.id },
+        );
+      });
+      await batch.commit();
+      return newGroupRef.id;
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.CREATE,
+        `families/${userAccount.familyId}/children/${selectedChildId}/questGroups`,
+      );
+      return null;
+    }
+  };
+
+  const updateGroup = async (
+    id: string,
+    updates: Partial<Omit<QuestGroup, 'id' | 'createdAt'>>,
+  ) => {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    try {
+      await updateDoc(
+        doc(
+          db,
+          'families',
+          userAccount.familyId,
+          'children',
+          selectedChildId,
+          'questGroups',
+          id,
+        ),
+        updates,
+      );
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `families/${userAccount.familyId}/children/${selectedChildId}/questGroups/${id}`,
+      );
+    }
+  };
+
+  const deleteGroup = (id: string) => {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    const g = groups.find((x: QuestGroup) => x.id === id);
+    if (!g) return;
+    showConfirm(
+      '그룹 삭제',
+      `'${g.title}' 그룹을 삭제할까요? 소속 마스터 미션은 그대로 남습니다.`,
+      async () => {
+        try {
+          // Unlink any quests currently in this group.
+          const linked = quests.filter((q: any) => q.groupId === id);
+          if (linked.length > 0) {
+            const batch = writeBatch(db);
+            linked.forEach((q: any) => {
+              batch.update(
+                doc(
+                  db,
+                  'families',
+                  userAccount.familyId!,
+                  'children',
+                  selectedChildId!,
+                  'quests',
+                  q.id,
+                ),
+                { groupId: null },
+              );
+            });
+            await batch.commit();
+          }
+          await deleteDoc(
+            doc(
+              db,
+              'families',
+              userAccount.familyId!,
+              'children',
+              selectedChildId!,
+              'questGroups',
+              id,
+            ),
+          );
+        } catch (error) {
+          handleFirestoreError(
+            error,
+            OperationType.DELETE,
+            `families/${userAccount.familyId}/children/${selectedChildId}/questGroups/${id}`,
+          );
+        }
+      },
+    );
+  };
+
+  // ---------------- Penalty (parent-only) ----------------
+  const applyPenalty = async (points: number, reason: string) => {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    if (!isParentAuthenticated) return;
+    const abs = Math.max(1, Math.round(Math.abs(points)));
+    try {
+      const batch = writeBatch(db);
+      const familyId = userAccount.familyId;
+      const childId = selectedChildId;
+      // Subtract only from the spendable balance — lifetimeEarned,
+      // level, and streak are preserved so a single mistake can't erase
+      // long-term progress.
+      const nextBalance = Math.max(0, (profile.totalPoints ?? 0) - abs);
+      batch.update(doc(db, 'families', familyId, 'children', childId), {
+        totalPoints: nextBalance,
+      });
+      const historyRef = doc(
+        collection(db, 'families', familyId, 'children', childId, 'history'),
+      );
+      batch.set(historyRef, {
+        type: 'penalty',
+        reason,
+        title: `패널티: ${reason || '사유 미기재'}`,
+        points: -abs,
+        timestamp: new Date().toISOString(),
+      });
+      await batch.commit();
+      playSound(SOUNDS.ERROR);
+      showAlert('패널티 적용', `-${abs}P 차감되었어요. 사유: ${reason || '(미기재)'}`);
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.WRITE,
+        `families/${userAccount.familyId}/children/${selectedChildId}`,
+      );
+    }
   };
 
   const purchaseReward = (reward: Reward) => {
@@ -1368,6 +1611,12 @@ export default function App() {
               onAddCategory={addCustomCategory}
               onDeleteCategory={deleteCustomCategory}
               onChangePassword={changeParentPassword}
+              groups={groups}
+              onAddGroup={addGroup}
+              onUpdateGroup={updateGroup}
+              onDeleteGroup={deleteGroup}
+              onSetQuestGroup={setQuestGroup}
+              onApplyPenalty={applyPenalty}
             />
             </Suspense>
           )
@@ -1396,6 +1645,7 @@ export default function App() {
                       playSound(SOUNDS.CLICK);
                       generateEncouragement();
                     }}
+                    groups={groups}
                   />
                 </div>
                 <div className={cn("lg:col-span-4 mt-6 lg:mt-0", viewMode === 'quests' && "hidden lg:block")}>

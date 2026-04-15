@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Gift } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Gift, AlertTriangle, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { type CustomCategory, type HistoryRecord } from '../../types';
 import { cn } from '../../lib/utils';
@@ -130,12 +130,34 @@ export function CalendarView({ history, customCategories }: CalendarViewProps) {
 
             {selectedDayData ? (
               <div className="space-y-2">
-                {selectedDayData.records.map((record) => (
-                  <div key={record.id} className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between">
+                {selectedDayData.records.map((record) => {
+                  const isPenalty = record.type === 'penalty';
+                  const isBonus = record.type === 'group-bonus';
+                  const isReward = record.type === 'reward';
+                  return (
+                  <div
+                    key={record.id}
+                    className={cn(
+                      'p-4 rounded-2xl border flex items-center justify-between',
+                      isPenalty
+                        ? 'bg-red-50 border-red-100'
+                        : isBonus
+                          ? 'bg-gradient-to-br from-yellow-50 to-amber-50 border-amber-200'
+                          : 'bg-white border-slate-100',
+                    )}
+                  >
                     <div className="flex items-center gap-3">
-                      {record.type === 'reward' ? (
+                      {isReward ? (
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-blue-500">
                           <Gift size={16} />
+                        </div>
+                      ) : isPenalty ? (
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-red-500">
+                          <AlertTriangle size={16} />
+                        </div>
+                      ) : isBonus ? (
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white bg-amber-500">
+                          <Sparkles size={16} />
                         </div>
                       ) : (
                         (() => {
@@ -151,14 +173,27 @@ export function CalendarView({ history, customCategories }: CalendarViewProps) {
                         <p className="font-bold text-slate-800 text-sm">{record.title}</p>
                         <p className="text-[10px] font-bold text-slate-400">
                           {new Date(record.timestamp).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                          {isPenalty && ' · 🔒 읽기전용 기록'}
                         </p>
                       </div>
                     </div>
-                    <span className={cn("text-xs font-black", record.type === 'reward' ? "text-blue-500" : "text-orange-500")}>
+                    <span
+                      className={cn(
+                        'text-xs font-black',
+                        isPenalty
+                          ? 'text-red-500'
+                          : isReward
+                            ? 'text-blue-500'
+                            : isBonus
+                              ? 'text-amber-600'
+                              : 'text-orange-500',
+                      )}
+                    >
                       {record.points > 0 ? '+' : ''}{record.points}P
                     </span>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-8 text-center">

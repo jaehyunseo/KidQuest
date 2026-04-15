@@ -1,5 +1,14 @@
 import React, { useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import {
+  Plus,
+  Trash2,
+  ListChecks,
+  Target,
+  AlertTriangle,
+  Gift,
+  Tag,
+  BarChart3,
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   type ChildProfile,
@@ -8,6 +17,7 @@ import {
   type HistoryRecord,
   type Quest,
   type QuestCategory,
+  type QuestGroup,
   type Reward,
   type UserProfile,
 } from '../../types';
@@ -18,6 +28,8 @@ import { TopBar } from './components/TopBar';
 import { ChildRail } from './components/ChildRail';
 import { ChildSummaryWidget } from './components/ChildSummaryWidget';
 import { QuestQuickAdd } from './components/QuestQuickAdd';
+import { QuestGroupManager } from './components/QuestGroupManager';
+import { PenaltyPanel } from './components/PenaltyPanel';
 import { FamilySettingsDrawer } from './components/FamilySettingsDrawer';
 import { UndoToast } from './components/UndoToast';
 import { OnboardingBanner } from './components/OnboardingBanner';
@@ -26,10 +38,21 @@ import { CategoryManager } from './components/CategoryManager';
 import { WeeklyReport } from './components/WeeklyReport';
 import { AVATAR_OPTIONS } from './constants';
 
+type TabKey = 'quests' | 'groups' | 'rewards' | 'penalty' | 'categories' | 'report';
+
+const TAB_META: Array<{ key: TabKey; label: string; icon: React.ComponentType<{ size?: number }>; color: string }> = [
+  { key: 'quests', label: '퀘스트', icon: ListChecks, color: 'yellow' },
+  { key: 'groups', label: '그룹', icon: Target, color: 'purple' },
+  { key: 'rewards', label: '보상', icon: Gift, color: 'blue' },
+  { key: 'penalty', label: '패널티', icon: AlertTriangle, color: 'red' },
+  { key: 'categories', label: '카테고리', icon: Tag, color: 'pink' },
+  { key: 'report', label: '리포트', icon: BarChart3, color: 'emerald' },
+];
+
 interface ParentDashboardProps {
   quests: Quest[];
   history: HistoryRecord[];
-  onAdd: (title: string, points: number, category: QuestCategory) => void;
+  onAdd: (title: string, points: number, category: QuestCategory | string) => void;
   onDelete: (id: string) => void;
   onReset: () => void;
   onFullReset: () => void;
@@ -60,6 +83,19 @@ interface ParentDashboardProps {
   onDeleteCategory: (id: string) => Promise<void>;
   // Parent password
   onChangePassword: (current: string, next: string) => Promise<{ ok: boolean; error?: string }>;
+  // Quest groups / penalty
+  groups: QuestGroup[];
+  onAddGroup: (
+    data: Omit<QuestGroup, 'id' | 'createdAt'>,
+    questIds?: string[],
+  ) => Promise<string | null>;
+  onUpdateGroup: (
+    id: string,
+    updates: Partial<Omit<QuestGroup, 'id' | 'createdAt'>>,
+  ) => Promise<void>;
+  onDeleteGroup: (id: string) => void;
+  onSetQuestGroup: (questId: string, groupId: string | null) => Promise<void>;
+  onApplyPenalty: (points: number, reason: string) => Promise<void>;
 }
 
 export function ParentDashboard(props: ParentDashboardProps) {
@@ -94,10 +130,17 @@ export function ParentDashboard(props: ParentDashboardProps) {
     onAddCategory,
     onDeleteCategory,
     onChangePassword,
+    groups,
+    onAddGroup,
+    onUpdateGroup,
+    onDeleteGroup,
+    onSetQuestGroup,
+    onApplyPenalty,
   } = props;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addChildOpen, setAddChildOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>('quests');
   const [undoMessage, setUndoMessage] = useState<string | null>(null);
   const undoActionRef = useRef<(() => void) | null>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -162,27 +205,105 @@ export function ParentDashboard(props: ParentDashboardProps) {
             {hasSelectedChild ? (
               <>
                 <ChildSummaryWidget profile={profile} quests={quests} />
-                <WeeklyReport profile={{ name: profile.name, streak: profile.streak, longestStreak: profile.longestStreak, achievements: profile.achievements, totalCompleted: profile.totalCompleted }} history={history} />
-                <QuestQuickAdd onAdd={onAdd} customCategories={customCategories} history={history} />
-                <QuestList
-                  quests={quests}
-                  customCategories={customCategories}
-                  onDelete={handleDeleteQuest}
-                />
-                <RewardManager
-                  rewards={rewards}
-                  onAdd={onAddReward}
-                  onUpdate={onUpdateReward}
-                  onDelete={onDeleteReward}
-                  showAlert={showAlert}
-                />
-                <CategoryManager
-                  customCategories={customCategories}
-                  quests={quests}
-                  onAdd={onAddCategory}
-                  onDelete={onDeleteCategory}
-                  showAlert={showAlert}
-                />
+
+                {/* Tab navigation */}
+                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-1.5 flex gap-1 overflow-x-auto scrollbar-hide">
+                  {TAB_META.map((t) => {
+                    const Icon = t.icon;
+                    const active = activeTab === t.key;
+                    return (
+                      <button
+                        key={t.key}
+                        onClick={() => setActiveTab(t.key)}
+                        className={cn(
+                          'flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black transition-all',
+                          active
+                            ? 'bg-slate-900 text-white shadow-md'
+                            : 'text-slate-500 hover:bg-slate-50',
+                        )}
+                      >
+                        <Icon size={14} />
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeTab}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className="space-y-6"
+                  >
+                    {activeTab === 'quests' && (
+                      <>
+                        <QuestQuickAdd
+                          onAdd={onAdd}
+                          customCategories={customCategories}
+                          history={history}
+                        />
+                        <QuestList
+                          quests={quests}
+                          customCategories={customCategories}
+                          groups={groups}
+                          onDelete={handleDeleteQuest}
+                          onAssignGroup={onSetQuestGroup}
+                        />
+                      </>
+                    )}
+
+                    {activeTab === 'groups' && (
+                      <QuestGroupManager
+                        groups={groups}
+                        quests={quests}
+                        onAdd={onAddGroup}
+                        onUpdate={onUpdateGroup}
+                        onDelete={onDeleteGroup}
+                        onAssignQuest={onSetQuestGroup}
+                      />
+                    )}
+
+                    {activeTab === 'rewards' && (
+                      <RewardManager
+                        rewards={rewards}
+                        onAdd={onAddReward}
+                        onUpdate={onUpdateReward}
+                        onDelete={onDeleteReward}
+                        showAlert={showAlert}
+                      />
+                    )}
+
+                    {activeTab === 'penalty' && (
+                      <PenaltyPanel onApply={onApplyPenalty} history={history} />
+                    )}
+
+                    {activeTab === 'categories' && (
+                      <CategoryManager
+                        customCategories={customCategories}
+                        quests={quests}
+                        onAdd={onAddCategory}
+                        onDelete={onDeleteCategory}
+                        showAlert={showAlert}
+                      />
+                    )}
+
+                    {activeTab === 'report' && (
+                      <WeeklyReport
+                        profile={{
+                          name: profile.name,
+                          streak: profile.streak,
+                          longestStreak: profile.longestStreak,
+                          achievements: profile.achievements,
+                          totalCompleted: profile.totalCompleted,
+                        }}
+                        history={history}
+                      />
+                    )}
+                  </motion.div>
+                </AnimatePresence>
               </>
             ) : (
               <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] p-12 text-center">
@@ -350,12 +471,17 @@ function AddChildModal({
 function QuestList({
   quests,
   customCategories,
+  groups,
   onDelete,
+  onAssignGroup,
 }: {
   quests: Quest[];
   customCategories: CustomCategory[];
+  groups: QuestGroup[];
   onDelete: (q: Quest) => void;
+  onAssignGroup: (questId: string, groupId: string | null) => Promise<void>;
 }) {
+  const groupById = new Map(groups.map((g) => [g.id, g]));
   return (
     <div className="bg-white rounded-[2rem] p-6 border border-slate-200 shadow-sm space-y-4">
       <div className="flex items-center justify-between">
@@ -368,6 +494,7 @@ function QuestList({
         {quests.length > 0 ? (
           quests.map((q) => {
             const cat = resolveCategory(q.category, customCategories);
+            const group = q.groupId ? groupById.get(q.groupId) : null;
             return (
             <motion.div
               layout
@@ -385,22 +512,46 @@ function QuestList({
                 </div>
                 <div>
                   <p className="font-black text-slate-800 text-sm leading-tight">{q.title}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                     <span className="text-[10px] font-bold text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded">
                       {q.points}P
                     </span>
                     <span className="text-[10px] font-bold text-slate-400">
                       {cat.label}
                     </span>
+                    {group && (
+                      <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
+                        {group.icon} {group.title}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => onDelete(q)}
-                className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-90"
-              >
-                <Trash2 size={16} />
-              </button>
+              <div className="flex items-center gap-1">
+                {groups.length > 0 && (
+                  <select
+                    value={q.groupId || ''}
+                    onChange={(e) =>
+                      void onAssignGroup(q.id, e.target.value || null)
+                    }
+                    className="text-[10px] font-bold text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1 outline-none focus:border-purple-400 max-w-[110px]"
+                    title="그룹 변경"
+                  >
+                    <option value="">그룹 없음</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.icon} {g.title}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  onClick={() => onDelete(q)}
+                  className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all active:scale-90"
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </motion.div>
             );
           })

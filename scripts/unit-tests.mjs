@@ -19,6 +19,7 @@ const categoryPref = await tsImport('../src/lib/categoryPreference.ts', import.m
 const exportCsv   = await tsImport('../src/lib/exportCsv.ts', import.meta.url);
 const reminders   = await tsImport('../src/lib/reminders.ts', import.meta.url);
 const hash        = await tsImport('../src/lib/hash.ts', import.meta.url);
+const materializer = await tsImport('../src/lib/questMaterializer.ts', import.meta.url);
 
 // Polyfill globals that some modules expect
 globalThis.localStorage = (() => {
@@ -231,5 +232,82 @@ describe('hash.ts', () => {
     const b = randomSalt();
     assert.notEqual(a, b);
     assert.match(a, /^[0-9a-f]{32}$/);
+  });
+});
+
+// ============================================================
+describe('questMaterializer.ts — evaluateGroupBonus', () => {
+  const { evaluateGroupBonus } = materializer;
+
+  const inst = (id, completed, claimed = false, scheduledDate = '2026-04-15', groupId = 'g1') => ({
+    id,
+    title: id,
+    points: 10,
+    category: 'homework',
+    completed,
+    scheduledDate,
+    groupId,
+    groupBonusClaimed: claimed,
+  });
+
+  test('no siblings → not eligible', () => {
+    const { eligible, siblings } = evaluateGroupBonus('g1', '2026-04-15', []);
+    assert.equal(eligible, false);
+    assert.equal(siblings.length, 0);
+  });
+
+  test('siblings present but one incomplete → not eligible', () => {
+    const all = [inst('a', true), inst('b', false), inst('c', true)];
+    const { eligible } = evaluateGroupBonus('g1', '2026-04-15', all);
+    assert.equal(eligible, false);
+  });
+
+  test('all siblings complete and no claim → eligible', () => {
+    const all = [inst('a', true), inst('b', true), inst('c', true)];
+    const { eligible, siblings } = evaluateGroupBonus('g1', '2026-04-15', all);
+    assert.equal(eligible, true);
+    assert.equal(siblings.length, 3);
+  });
+
+  test('already claimed → not eligible (no double payout)', () => {
+    const all = [inst('a', true, true), inst('b', true), inst('c', true)];
+    const { eligible } = evaluateGroupBonus('g1', '2026-04-15', all);
+    assert.equal(eligible, false);
+  });
+
+  test('different dates do not mingle when scheduledDate is set', () => {
+    const all = [
+      inst('a', true, false, '2026-04-15'),
+      inst('b', true, false, '2026-04-14'), // yesterday, ignored
+    ];
+    const { eligible, siblings } = evaluateGroupBonus('g1', '2026-04-15', all);
+    assert.equal(eligible, true); // only 1 sibling today, all complete
+    assert.equal(siblings.length, 1);
+  });
+
+  test('quests without scheduledDate are treated as live for today', () => {
+    const undated = {
+      id: 'a',
+      title: 'a',
+      points: 10,
+      category: 'homework',
+      completed: true,
+      groupId: 'g1',
+      groupBonusClaimed: false,
+    };
+    const { eligible, siblings } = evaluateGroupBonus('g1', '2026-04-15', [undated]);
+    assert.equal(eligible, true);
+    assert.equal(siblings.length, 1);
+  });
+
+  test('different groups are isolated', () => {
+    const all = [
+      inst('a', true, false, '2026-04-15', 'g1'),
+      inst('b', false, false, '2026-04-15', 'g2'),
+    ];
+    const r1 = evaluateGroupBonus('g1', '2026-04-15', all);
+    const r2 = evaluateGroupBonus('g2', '2026-04-15', all);
+    assert.equal(r1.eligible, true);
+    assert.equal(r2.eligible, false);
   });
 });

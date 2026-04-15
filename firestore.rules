@@ -146,14 +146,23 @@ service cloud.firestore {
         allow write: if isFamilyMember(familyId) || isAdmin();
 
         // Quests: parents manage; non-parent family members (children) may
-        // only toggle `completed` / `completedAt` / streak bookkeeping.
+        // only toggle `completed` / `completedAt` and the group-bonus
+        // bookkeeping flag. Past-date guard is enforced client-side
+        // (Firestore rules can't reliably compute "today" in user-local tz).
         match /quests/{questId} {
           allow read: if isFamilyMember(familyId) || isAdmin();
           allow create, delete: if isParentOfFamily(familyId) || isAdmin();
           allow update: if isParentOfFamily(familyId) || isAdmin() ||
             (isFamilyMember(familyId) &&
              request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['completed', 'completedAt']));
+               .hasOnly(['completed', 'completedAt', 'groupBonusClaimed']));
+        }
+
+        // Quest groups — bundles of quests that award a bonus when all
+        // members complete on the same day.
+        match /questGroups/{groupId} {
+          allow read: if isFamilyMember(familyId) || isAdmin();
+          allow write: if isParentOfFamily(familyId) || isAdmin();
         }
 
         // History is written on quest toggle / reward purchase — any family

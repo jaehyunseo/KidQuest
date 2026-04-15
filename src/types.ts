@@ -9,9 +9,25 @@ export interface Quest {
   id: string;
   title: string;
   points: number;
-  category: QuestCategory;
+  category: QuestCategory | string;
   completed: boolean;
   completedAt?: string;
+  // Optional — reserved for future date-scoped scheduling.
+  scheduledDate?: string;   // 'YYYY-MM-DD'
+  // Group binding for bonus payouts.
+  groupId?: string;
+  groupBonusClaimed?: boolean; // reset on daily auto-reset; blocks double-award
+}
+
+// A bundle of quests that pays a bonus once all members are completed
+// on the same day.
+export interface QuestGroup {
+  id: string;
+  title: string;
+  icon: string;            // emoji
+  bonusPoints: number;
+  templateIds?: string[];  // legacy — kept for backward-compat, unused
+  createdAt: string;
 }
 
 export interface UserAccount {
@@ -131,12 +147,14 @@ export interface FeedComment {
 
 export interface HistoryRecord {
   id: string;
-  type?: 'quest' | 'reward';
+  type?: 'quest' | 'reward' | 'penalty' | 'group-bonus';
   questId?: string;
   rewardId?: string;
+  groupId?: string;                // set when type === 'group-bonus'
+  reason?: string;                 // set when type === 'penalty'
   title: string;
-  points: number;
-  category?: QuestCategory;
+  points: number;                  // negative for penalty / reward purchases
+  category?: QuestCategory | string;
   timestamp: string;
 }
 
