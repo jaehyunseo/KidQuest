@@ -131,7 +131,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
                   e.target.value.replace(/\s+/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6)
                 )
               }
-              className="w-full border-2 border-slate-100 rounded-2xl px-6 py-4 outline-none focus:border-blue-400 bg-slate-50/50 font-black text-2xl tracking-[0.3em] text-center transition-all uppercase"
+              className="w-full border-2 border-slate-100 rounded-2xl px-6 py-4 outline-none focus:border-blue-400 bg-slate-50/50 font-black text-lg placeholder:text-sm placeholder:tracking-normal placeholder:font-bold text-center transition-all uppercase placeholder:normal-case"
               maxLength={6}
             />
             <button

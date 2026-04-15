@@ -47,9 +47,19 @@ export interface UserAccount {
 export interface Family {
   id: string;
   name: string;
+  // Doc ID equals parentInviteCode. `inviteCode` is kept as an alias of
+  // parentInviteCode so legacy reads keep working.
   inviteCode: string;
+  parentInviteCode: string;
+  childInviteCode: string;
+  // The family creator. Immutable. Only the owner may remove members.
+  ownerUid: string;
   createdAt: string;
   members: Record<string, 'parent' | 'child'>; // uid -> role
+  // Display names for members (denormalized so the settings drawer can
+  // render the member list without reading other users' /users/{uid} docs,
+  // which is forbidden by rules).
+  memberNames?: Record<string, string>;
   // Parent password hash — PRIMARY location is /families/{id}/private/config
   // (parent-only via deployed rules). These root-level fields are a
   // fallback-writable backup so password change works even before the

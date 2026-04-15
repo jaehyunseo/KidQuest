@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle, KeyRound, Upload, Trash2, Download } from 'lucide-react';
+import { X, Home, Copy, Users, ChevronRight, CheckCircle2, AlertTriangle, KeyRound, Upload, Trash2, Download, Crown, UserMinus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { UserProfile, Family, HistoryRecord } from '../../../types';
 import { downloadHistoryCsv } from '../../../lib/exportCsv';
@@ -19,6 +19,8 @@ interface FamilySettingsDrawerProps {
   onUploadChildPhoto: (file: File) => Promise<void>;
   onRemoveChildPhoto: () => void;
   onJoinFamily: (code: string) => void;
+  onRemoveMember: (uid: string) => void;
+  currentUid: string | null;
   onDeleteSelectedChild: () => void;
   onReset: () => void;
   onPointReset: () => void;
@@ -38,6 +40,8 @@ export function FamilySettingsDrawer({
   onUploadChildPhoto,
   onRemoveChildPhoto,
   onJoinFamily,
+  onRemoveMember,
+  currentUid,
   onDeleteSelectedChild,
   onReset,
   onPointReset,
@@ -76,16 +80,28 @@ export function FamilySettingsDrawer({
     setChildName(profile.name);
   }, [profile.name]);
 
-  // Prefer inviteCode field over doc id. Legacy families use Firestore
-  // auto-IDs (20 chars) while their inviteCode is the 6-char code parents
-  // should actually share. New families have id === inviteCode so either
-  // works — but inviteCode is always the canonical shareable value.
-  const shareableCode = family?.inviteCode || family?.id || '';
+  // Two distinct invite codes — role is determined by which one was used.
+  // parentInviteCode is also the family doc ID. childInviteCode is queried
+  // separately. Old families that predate this split fall back to the
+  // single legacy `inviteCode` value for the parent slot.
+  const parentCode = family?.parentInviteCode || family?.inviteCode || family?.id || '';
+  const childCode = family?.childInviteCode || '';
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(shareableCode);
-    showAlert('복사 완료', '가족 초대 코드가 클립보드에 복사되었습니다.');
+  const handleCopy = (code: string, label: string) => {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    showAlert('복사 완료', `${label}이(가) 클립보드에 복사되었습니다.`);
   };
+
+  const isOwner = !!(family?.ownerUid && currentUid && family.ownerUid === currentUid);
+  const memberEntries: Array<{ uid: string; role: 'parent' | 'child'; name: string }> =
+    family?.members
+      ? Object.entries(family.members).map(([uid, role]) => ({
+          uid,
+          role: role as 'parent' | 'child',
+          name: family.memberNames?.[uid] || uid.slice(0, 6),
+        }))
+      : [];
 
   const handleJoinFamily = (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,21 +166,93 @@ export function FamilySettingsDrawer({
                   </div>
                   <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
                     <p className="text-[9px] font-black text-blue-200 uppercase tracking-widest mb-1">
-                      초대 코드
+                      부모 초대 코드
                     </p>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 text-base font-black font-mono truncate select-all tracking-widest">
-                        {shareableCode || '—'}
+                        {parentCode || '—'}
                       </code>
                       <button
-                        onClick={handleCopyCode}
+                        onClick={() => handleCopy(parentCode, '부모 초대 코드')}
                         className="w-8 h-8 bg-white text-blue-600 rounded-lg flex items-center justify-center active:scale-95"
+                        aria-label="부모 초대 코드 복사"
                       >
                         <Copy size={14} />
                       </button>
                     </div>
                   </div>
+                  <div className="bg-white/10 rounded-xl p-3 backdrop-blur-sm">
+                    <p className="text-[9px] font-black text-blue-200 uppercase tracking-widest mb-1">
+                      자녀 초대 코드
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-base font-black font-mono truncate select-all tracking-widest">
+                        {childCode || '—'}
+                      </code>
+                      <button
+                        onClick={() => handleCopy(childCode, '자녀 초대 코드')}
+                        disabled={!childCode}
+                        className="w-8 h-8 bg-white text-blue-600 rounded-lg flex items-center justify-center active:scale-95 disabled:opacity-40"
+                        aria-label="자녀 초대 코드 복사"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <p className="text-[9px] font-bold text-blue-200/90 mt-2 leading-snug">
+                      코드별로 합류 시 역할이 자동 결정돼요. 자녀 코드는 부모 권한을 받지 못해요.
+                    </p>
+                  </div>
                 </div>
+
+                {memberEntries.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-2">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">
+                      가족 멤버 ({memberEntries.length}명)
+                    </p>
+                    {memberEntries.map((m) => {
+                      const isMemberOwner = m.uid === family?.ownerUid;
+                      const isSelf = m.uid === currentUid;
+                      const canRemove = isOwner && !isSelf;
+                      return (
+                        <div
+                          key={m.uid}
+                          className="flex items-center gap-3 px-3 py-2 bg-slate-50 rounded-xl"
+                        >
+                          <div className={cn(
+                            'w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0',
+                            m.role === 'parent' ? 'bg-blue-500' : 'bg-emerald-500'
+                          )}>
+                            {isMemberOwner ? <Crown size={14} /> : <Users size={14} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-black text-sm text-slate-800 truncate">
+                              {m.name}
+                              {isSelf && <span className="text-[10px] font-bold text-slate-400 ml-1">(나)</span>}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-400">
+                              {isMemberOwner ? '👑 가족 주인 · ' : ''}
+                              {m.role === 'parent' ? '부모' : '자녀'}
+                            </p>
+                          </div>
+                          {canRemove && (
+                            <button
+                              onClick={() => onRemoveMember(m.uid)}
+                              className="w-8 h-8 bg-red-50 hover:bg-red-100 text-red-500 rounded-lg flex items-center justify-center active:scale-95"
+                              aria-label={`${m.name} 제거`}
+                            >
+                              <UserMinus size={14} />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {!isOwner && (
+                      <p className="text-[10px] font-bold text-slate-400 px-1 pt-1">
+                        * 멤버 제거는 가족 주인만 할 수 있어요.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <button
                   onClick={() => setShowJoin((v) => !v)}

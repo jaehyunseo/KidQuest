@@ -19,7 +19,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
 import { auth, db, googleProvider } from './firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
-import { collection, doc, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc, getDoc, writeBatch, addDoc, query, where, getDocs, limit, deleteField } from 'firebase/firestore';
 import type { QuestCategory, UserProfile, Reward, ChildProfile, Family, QuestGroup } from './types';
 import { evaluateGroupBonus } from './lib/questMaterializer';
 import { cn, getLevel, getProgressToNextLevel } from './lib/utils';
@@ -910,16 +910,26 @@ export default function App() {
   const createFamily = async (name: string) => {
     if (!user) return;
     try {
-      const inviteCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const familyRef = doc(db, 'families', inviteCode); // Use inviteCode as ID for easier joining
+      const gen = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+      const parentInviteCode = gen();
+      // Re-roll the child code until it differs from the parent code so the
+      // two roles can never collide on the same string.
+      let childInviteCode = gen();
+      while (childInviteCode === parentInviteCode) childInviteCode = gen();
+      const familyRef = doc(db, 'families', parentInviteCode); // Use parent code as ID for direct lookup
       const salt = randomSalt();
       const defaultPasswordHash = await saltedHash('1234', salt);
+      const ownerName = userAccount?.name || user.email || '부모';
       const newFamily: Family = {
-        id: inviteCode,
+        id: parentInviteCode,
         name,
-        inviteCode,
+        inviteCode: parentInviteCode,
+        parentInviteCode,
+        childInviteCode,
+        ownerUid: user.uid,
         createdAt: new Date().toISOString(),
         members: { [user.uid]: 'parent' },
+        memberNames: { [user.uid]: ownerName },
       };
       await setDoc(familyRef, newFamily);
       // Parent password hash + salt live in a parent-only private subdoc
@@ -927,7 +937,7 @@ export default function App() {
       // family doc. Salt makes the hash resistant to rainbow tables.
       try {
         await setDoc(
-          doc(db, 'families', inviteCode, 'private', 'config'),
+          doc(db, 'families', parentInviteCode, 'private', 'config'),
           {
             parentPasswordHash: defaultPasswordHash,
             parentPasswordSalt: salt,
@@ -938,11 +948,11 @@ export default function App() {
         console.warn('Failed to seed private config:', secretErr);
       }
       const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, { familyId: inviteCode });
+      await updateDoc(userRef, { familyId: parentInviteCode });
 
       // Auto-create a default child so the parent dashboard isn't empty on first entry.
       try {
-        const childrenRef = collection(db, 'families', inviteCode, 'children');
+        const childrenRef = collection(db, 'families', parentInviteCode, 'children');
         await addDoc(childrenRef, {
           name: '우리 아이',
           avatar: '🦁',
@@ -956,12 +966,12 @@ export default function App() {
 
       // Seed default rewards so the shop isn't empty
       try {
-        const rewardsRef = collection(db, 'families', inviteCode, 'rewards');
+        const rewardsRef = collection(db, 'families', parentInviteCode, 'rewards');
         for (const r of REWARD_TEMPLATES) {
           await addDoc(rewardsRef, r);
         }
         // Mark migration flag so the auto-seed effect doesn't run later
-        await updateDoc(doc(db, 'families', inviteCode), { rewardsSeeded: true });
+        await updateDoc(doc(db, 'families', parentInviteCode), { rewardsSeeded: true });
       } catch (rewardErr) {
         console.warn('Failed to seed default rewards:', rewardErr);
       }
@@ -972,7 +982,10 @@ export default function App() {
       } catch {}
       setShowOnboarding(true);
 
-      showAlert('가족 생성 완료', `가족이 생성되었습니다! 초대 코드: ${inviteCode}`);
+      showAlert(
+        '가족 생성 완료',
+        `가족이 생성되었습니다!\n부모 코드: ${parentInviteCode}\n자녀 코드: ${childInviteCode}`
+      );
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'families');
     }
@@ -1166,39 +1179,50 @@ export default function App() {
 
     const performJoin = async () => {
       try {
-        // 1) New format: families created after createFamily refactor use
-        //    the invite code as the document ID — try direct lookup first.
+        // The role of the joining user is determined by WHICH code matches:
+        //   - parentInviteCode (== doc ID) → parent
+        //   - childInviteCode  (queried)   → child
+        // The user does not get to pick — this is the entire point of the
+        // dual-code RBAC. If the code matches neither, we reject.
         let familyId: string | null = null;
         let familyData: Family | null = null;
+        let joinedRole: 'parent' | 'child' | null = null;
+
+        // 1) Parent code = doc ID → direct lookup.
         const directSnap = await getDoc(doc(db, 'families', code));
         if (directSnap.exists()) {
           familyId = directSnap.id;
           familyData = directSnap.data() as Family;
-        } else {
-          // 2) Legacy format: older families used Firestore auto-IDs,
-          //    so we must query by the inviteCode field.
-          const q = query(
+          joinedRole = 'parent';
+        }
+
+        // 2) Child code → query by childInviteCode field.
+        if (!familyId) {
+          const childQ = query(
             collection(db, 'families'),
-            where('inviteCode', '==', code),
+            where('childInviteCode', '==', code),
             limit(1)
           );
-          const snap = await getDocs(q);
-          if (!snap.empty) {
-            familyId = snap.docs[0].id;
-            familyData = snap.docs[0].data() as Family;
+          const childSnap = await getDocs(childQ);
+          if (!childSnap.empty) {
+            familyId = childSnap.docs[0].id;
+            familyData = childSnap.docs[0].data() as Family;
+            joinedRole = 'child';
           }
         }
 
-        if (!familyId || !familyData) {
+        if (!familyId || !familyData || !joinedRole) {
           showAlert('가족 찾기 실패', `'${code}' 코드를 가진 가족을 찾을 수 없어요. 코드를 다시 확인해주세요.`);
           return;
         }
 
+        const memberName = userAccount?.name || user.email || (joinedRole === 'parent' ? '부모' : '자녀');
         await updateDoc(doc(db, 'families', familyId), {
-          [`members.${user.uid}`]: 'parent',
+          [`members.${user.uid}`]: joinedRole,
+          [`memberNames.${user.uid}`]: memberName,
         });
-        await updateDoc(doc(db, 'users', user.uid), { familyId });
-        showAlert('가족 합류 완료', `${familyData.name} 가족에 합류했어요!`);
+        await updateDoc(doc(db, 'users', user.uid), { familyId, role: joinedRole });
+        showAlert('가족 합류 완료', `${familyData.name} 가족에 ${joinedRole === 'parent' ? '부모' : '자녀'}로 합류했어요!`);
       } catch (error: any) {
         showAlert('합류 실패', error?.message || '가족 합류 중 오류가 발생했어요.');
         handleFirestoreError(error, OperationType.WRITE, `families/${code}`);
@@ -1214,6 +1238,41 @@ export default function App() {
     } else {
       performJoin();
     }
+  };
+
+  const removeFamilyMember = async (targetUid: string) => {
+    if (!user || !family) return;
+    if (family.ownerUid !== user.uid) {
+      showAlert('권한 없음', '가족 멤버 삭제는 가족 주인만 할 수 있어요.');
+      return;
+    }
+    if (targetUid === user.uid) {
+      showAlert('삭제 불가', '본인은 가족에서 제거할 수 없어요.');
+      return;
+    }
+    const targetName = family.memberNames?.[targetUid] || '이 멤버';
+    showConfirm(
+      '가족 멤버 제거',
+      `${targetName}님을 가족에서 제거할까요? 해당 사용자는 더 이상 이 가족의 데이터를 볼 수 없게 됩니다.`,
+      async () => {
+        try {
+          await updateDoc(doc(db, 'families', family.id), {
+            [`members.${targetUid}`]: deleteField(),
+            [`memberNames.${targetUid}`]: deleteField(),
+          });
+          // Best-effort: clear familyId on the removed user's account so
+          // their next login lands them back in family setup. May fail under
+          // strict rules — that's fine, the family-side removal is the
+          // authoritative permission boundary.
+          try {
+            await updateDoc(doc(db, 'users', targetUid), { familyId: deleteField() });
+          } catch {}
+          showAlert('제거 완료', `${targetName}님을 가족에서 제거했어요.`);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `families/${family.id}`);
+        }
+      }
+    );
   };
 
   const addChild = async (name: string, avatar: string) => {
@@ -1606,6 +1665,8 @@ export default function App() {
               selectedChildId={selectedChildId}
               onSelectChild={setSelectedChildId}
               onJoinFamily={joinFamily}
+              onRemoveMember={removeFamilyMember}
+              currentUid={user?.uid || null}
               showAlert={showAlert}
               showOnboarding={showOnboarding}
               onDismissOnboarding={dismissOnboarding}

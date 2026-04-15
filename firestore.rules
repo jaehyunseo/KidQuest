@@ -39,6 +39,12 @@ service cloud.firestore {
       return isAuthenticated() && userData != null && userData.familyId == familyId && userData.role == 'parent';
     }
 
+    function isOwnerOfFamily(familyId) {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/families/$(familyId)) &&
+        get(/databases/$(database)/documents/families/$(familyId)).data.ownerUid == request.auth.uid;
+    }
+
     // ===============================================================
     // Domain Validators
     // ===============================================================
@@ -58,6 +64,21 @@ service cloud.firestore {
              request.resource.data.role == resource.data.role;
     }
 
+    // Allow a role change ONLY when it matches the role recorded for this
+    // user in their (newly-joined) family doc. The join flow writes the
+    // family.members entry FIRST, then updates users.role — so by the time
+    // this rule fires, family.members[uid] already reflects the truth.
+    // This lets a user who joined via the child code legitimately demote
+    // themselves to 'child', while still blocking arbitrary self-promotion
+    // from 'child' to 'parent'.
+    function roleMatchesFamilyRecord() {
+      let newRole = request.resource.data.role;
+      let newFamilyId = request.resource.data.familyId;
+      return newFamilyId is string &&
+        exists(/databases/$(database)/documents/families/$(newFamilyId)) &&
+        get(/databases/$(database)/documents/families/$(newFamilyId)).data.members[request.auth.uid] == newRole;
+    }
+
     // ===============================================================
     // Users
     // ===============================================================
@@ -65,8 +86,12 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data);
-      // Self-updates allowed but role field is frozen (admins can still override).
-      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && rolePreserving()) || isAdmin();
+      // Self-updates allowed. Role changes are blocked unless the new role
+      // matches what the user's family doc already records for them — that
+      // is the only legitimate way for a user to change roles (joining a
+      // family via the child invite code).
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) &&
+                        (rolePreserving() || roleMatchesFamilyRecord())) || isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -80,12 +105,31 @@ service cloud.firestore {
       // Sensitive material (parent password hash) must NOT live on this doc —
       // it belongs under /private/config below.
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      // Parents can update their family doc; any authed user can append
-      // themselves to `members` (used by join flow).
-      allow update: if isParentOfFamily(familyId) || isAdmin() ||
-                    (isAuthenticated() &&
-                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']));
+      // On create, the caller must be the declared owner. ownerUid is the
+      // master-of-the-family marker and is immutable from this point on.
+      allow create: if isAuthenticated() &&
+                    request.resource.data.ownerUid == request.auth.uid;
+
+      // Updates: three legitimate paths.
+      //  (a) Owner — full control, but ownerUid stays frozen.
+      //  (b) Parent (non-owner) — may edit family fields BUT may not touch
+      //      `members` / `memberNames` / `ownerUid` (only owner removes
+      //      members; only the join flow appends them).
+      //  (c) Any authed user — join flow: append ONLY their own slot to
+      //      `members` and `memberNames`. Cannot remove or modify other
+      //      members. Cannot change ownerUid.
+      allow update: if isAdmin() ||
+        (isOwnerOfFamily(familyId) &&
+          request.resource.data.ownerUid == resource.data.ownerUid) ||
+        (isParentOfFamily(familyId) &&
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['members', 'memberNames'])) ||
+        (isAuthenticated() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberNames']) &&
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid]) &&
+          request.auth.uid in request.resource.data.members &&
+          request.resource.data.memberNames.diff(resource.data.memberNames).affectedKeys().hasOnly([request.auth.uid]));
       allow delete: if isAdmin();
 
       // -----------------------------------------------------------
