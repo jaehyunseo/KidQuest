@@ -13,7 +13,10 @@
     "test:unit": "node scripts/unit-tests.mjs",
     "test:smoke": "node scripts/smoke-extended.mjs",
     "test:rules": "node scripts/test-rules.mjs",
-    "test:storage": "node scripts/test-storage-rules.mjs"
+    "test:storage": "node scripts/test-storage-rules.mjs",
+    "deploy": "npm run build && firebase deploy --only hosting,firestore:rules,storage --project prod",
+    "deploy:hosting": "npm run build && firebase deploy --only hosting --project prod",
+    "deploy:rules": "firebase deploy --only firestore:rules,storage --project prod"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

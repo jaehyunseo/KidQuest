@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "kidquest-emulator"
+    "default": "gen-lang-client-0281831277",
+    "prod": "gen-lang-client-0281831277",
+    "emulator": "kidquest-emulator"
   }
 }
