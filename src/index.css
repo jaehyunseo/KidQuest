@@ -5,3 +5,12 @@
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Outfit", sans-serif;
 }
+
+/* Hide scrollbar utility — used for internal-scroll lists where the
+   scrollbar would visually clutter the UI. Content remains scrollable. */
+@utility scrollbar-hide {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

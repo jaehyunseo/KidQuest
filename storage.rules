@@ -3,46 +3,80 @@ service firebase.storage {
   match /b/{bucket}/o {
 
     // ===============================================================
-    // KidQuest Storage Rules
+    // KidQuest Storage Rules — hardened model
     // ---------------------------------------------------------------
     // Path layout used by the app (see src/lib/storage.ts):
-    //   families/{familyId}/children/{childId}/avatar_{ts}.{ext}
+    //   families/{familyId}/children/{childId}/{uploaderUid}_{token}.{ext}
+    //   families/{familyId}/feed/{uploaderUid}_{token}.{ext}
     //
-    // NOTE on authorization: Firestore rules can call get() to look up
-    // the user's familyId via /users/{uid}. Storage rules cannot query
-    // Firestore directly. We therefore allow:
-    //   - Any authenticated user can READ files (they are non-secret
-    //     avatar images, served via public download URLs anyway).
-    //   - Only authenticated users can WRITE, with strict constraints:
-    //     * file under 3MB
-    //     * image/* content type only
-    //     * path must live under families/*/children/*/...
+    // Threat model
+    // ------------
+    // Storage rules cannot query Firestore, so a rule like
+    // "is this caller a member of familyId?" is impossible here. We
+    // defend in depth with four layers instead:
     //
-    // The deeper family-membership check is enforced at the app layer
-    // (Firestore doc for the child is gated by firestore.rules).
+    //   1. App Check (reCAPTCHA v3) — non-app callers get 403 from
+    //      the Firebase front door before our rules run.
+    //   2. Per-object download tokens — legitimate reads go through
+    //      `getDownloadURL()`, which embeds a long random capability
+    //      token in the URL. That URL is stored in Firestore under
+    //      the (family-scoped) feed post / child profile doc, so
+    //      only family members can obtain it.
+    //   3. Direct path reads are denied — an attacker who guesses a
+    //      path cannot fetch it without the token.
+    //   4. Writes are pinned to the caller's uid — the filename must
+    //      begin with `{auth.uid}_`, which prevents one user from
+    //      writing objects that appear to come from another user.
+    //      (An attacker can still create orphan files under a
+    //      victim family's folder with their own uid, but no
+    //      matching Firestore post can be created for them because
+    //      firestore.rules enforces family membership + authorUid,
+    //      and orphaned blobs cost us storage only.)
+    //
+    // Further hardening (out of scope for pure rules): a Cloud
+    // Function proxy that verifies family membership against
+    // Firestore before writing to Storage.
     // ===============================================================
 
     function isAuthed() {
       return request.auth != null;
     }
 
-    function isValidAvatar() {
+    function isValidImage() {
       return request.resource.size < 3 * 1024 * 1024 &&
              request.resource.contentType.matches('image/(jpeg|png|webp)');
     }
 
-    // Child avatar uploads
-    match /families/{familyId}/children/{childId}/{file=**} {
-      allow read: if isAuthed();
-      allow write: if isAuthed() && isValidAvatar();
-      allow delete: if isAuthed();
+    // Require the leaf filename to start with the caller's uid so a
+    // compromised client can't masquerade. Works for single-segment
+    // files only; the match patterns below use `{file}` (not `**`)
+    // to guarantee that.
+    function isUidScoped(file) {
+      return isAuthed() &&
+             file.matches('^' + request.auth.uid + '_[A-Za-z0-9]+\\.(jpe?g|png|webp)$');
     }
 
+    // ----------------------------------------------------------------
+    // Child avatar uploads
+    // ----------------------------------------------------------------
+    // Reads must go via the download URL token — rules deny direct
+    // path reads. The avatar URL is stored on the child profile doc,
+    // which firestore.rules gates by family membership.
+    // Deletes are uid-scoped so a user cannot erase another user's
+    // avatar even if they know the path.
+    match /families/{familyId}/children/{childId}/{file} {
+      allow read: if false;
+      allow write: if isUidScoped(file) && isValidImage();
+      allow delete: if isUidScoped(file);
+    }
+
+    // ----------------------------------------------------------------
     // Family feed (mini SNS) photo uploads
-    match /families/{familyId}/feed/{file=**} {
-      allow read: if isAuthed();
-      allow write: if isAuthed() && isValidAvatar();
-      allow delete: if isAuthed();
+    // ----------------------------------------------------------------
+    match /families/{familyId}/feed/{file} {
+      allow read: if false;
+      allow write: if isUidScoped(file) && isValidImage();
+      allow delete: if isUidScoped(file);
     }
 
     // Default deny for every other path.

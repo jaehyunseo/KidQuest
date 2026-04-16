@@ -1,11 +1,19 @@
 {
-  "name": "KidQuest (아이퀘스트)",
+  "id": "/?source=pwa",
+  "name": "KidQuest",
   "short_name": "KidQuest",
-  "description": "아이들의 올바른 습관 형성을 위한 게임형 투두 리스트",
-  "start_url": "/",
+  "description": "부모와 아이가 함께 약속을 세우고 매일 실천하며, 작은 성취로 건강한 습관을 형성하는 가족 동반자 서비스",
+  "lang": "ko-KR",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#fefce8",
   "theme_color": "#facc15",
+  "categories": ["education", "lifestyle", "kids", "productivity"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192.png",
@@ -30,6 +38,35 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "오늘의 미션",
+      "short_name": "미션",
+      "description": "오늘의 미션 체크리스트로 바로 이동",
+      "url": "/?view=quests",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "성장 일기",
+      "short_name": "일기",
+      "description": "캘린더와 과거 기록 보기",
+      "url": "/?view=calendar",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "미션 보상",
+      "short_name": "보상",
+      "description": "포인트로 보상 구매",
+      "url": "/?view=shop",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }

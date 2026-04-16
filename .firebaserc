@@ -3,5 +3,18 @@
     "default": "gen-lang-client-0281831277",
     "prod": "gen-lang-client-0281831277",
     "emulator": "kidquest-emulator"
-  }
+  },
+  "targets": {
+    "gen-lang-client-0281831277": {
+      "hosting": {
+        "app": [
+          "gen-lang-client-0281831277"
+        ],
+        "landing": [
+          "pyxora-landing"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

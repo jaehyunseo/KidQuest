@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronDown, Shield, FileText, UserCheck, Megaphone, X } from 'lucide-react';
+import { ChevronDown, Shield, FileText, UserCheck, Megaphone, X, Users } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export interface ConsentResult {
@@ -8,6 +8,13 @@ export interface ConsentResult {
   terms: boolean;
   age: boolean;
   marketing: boolean;
+  // Legal guardian acknowledgement. PIPA 제22조의2 requires consent
+  // for processing under-14 children's data; the law specifies "consent
+  // from the legal guardian", not collection of identifying details.
+  // PIPA 제3조 (data minimization) discourages collecting more than
+  // necessary, so we ask only for the explicit checkbox — no name,
+  // no children count.
+  guardianAck: boolean;
 }
 
 interface PrivacyConsentModalProps {
@@ -35,21 +42,23 @@ export function PrivacyConsentModal({
   const [terms, setTerms] = useState(false);
   const [age, setAge] = useState(false);
   const [marketing, setMarketing] = useState(false);
+  const [guardianAck, setGuardianAck] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const allRequired = privacy && terms && age;
+  const allRequired = privacy && terms && age && guardianAck;
 
   const toggleAll = () => {
-    const next = !(privacy && terms && age && marketing);
+    const next = !(privacy && terms && age && marketing && guardianAck);
     setPrivacy(next);
     setTerms(next);
     setAge(next);
     setMarketing(next);
+    setGuardianAck(next);
   };
 
   const handleAgree = () => {
     if (!allRequired) return;
-    onAgree({ privacy, terms, age, marketing });
+    onAgree({ privacy, terms, age, marketing, guardianAck });
   };
 
   return (
@@ -75,7 +84,7 @@ export function PrivacyConsentModal({
             <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-hidden shadow-2xl pointer-events-auto flex flex-col">
               <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-black text-slate-800">아이퀘스트 이용 동의</h2>
+                  <h2 className="text-xl font-black text-slate-800">KidQuest 이용 동의</h2>
                   <p className="text-xs font-bold text-slate-400 mt-1">
                     {blocking
                       ? '서비스 이용을 위해 아래 항목에 동의해주세요'
@@ -125,6 +134,9 @@ export function PrivacyConsentModal({
                       <p className="text-slate-400">
                         동의를 거부할 수 있으나, 동의하지 않을 경우 서비스 이용이 제한됩니다.
                       </p>
+                      <p>
+                        <b>전체 정책</b>: <a href="/privacy.html" target="_blank" rel="noopener" className="text-blue-600 underline">privacy.html</a> · 문의: <b>hello@pyxora.app</b>
+                      </p>
                     </div>
                   }
                 />
@@ -139,11 +151,12 @@ export function PrivacyConsentModal({
                   onExpand={() => setExpanded(expanded === 'terms' ? null : 'terms')}
                   details={
                     <div className="space-y-2 text-[11px] font-medium text-slate-600 leading-relaxed">
-                      <p><b>서비스명</b>: 아이퀘스트 (KidQuest)</p>
                       <p><b>서비스 내용</b>: 부모와 아이가 함께 약속을 세우고 매일 실천하며, 작은 성취를 통해 건강한 습관을 형성하도록 돕는 가족 동반자 서비스</p>
                       <p><b>이용자 의무</b>: 타인의 개인정보를 무단 수집·이용·제공하지 않아야 합니다.</p>
                       <p><b>면책</b>: 천재지변, 서비스 장애 등 불가항력으로 인한 서비스 중단에 대해 책임지지 않습니다.</p>
-                      <p><b>운영자</b>: 아이퀘스트 (문의: kidquest@example.com)</p>
+                      <p><b>서비스명</b>: KidQuest</p>
+                      <p><b>운영자</b>: Pyxora · 문의: <b>hello@pyxora.app</b></p>
+                      <p><b>전체 약관</b>: <a href="/terms.html" target="_blank" rel="noopener" className="text-blue-600 underline">terms.html</a></p>
                     </div>
                   }
                 />
@@ -179,6 +192,51 @@ export function PrivacyConsentModal({
                   expanded={expanded === 'marketing'}
                   onExpand={() => setExpanded(expanded === 'marketing' ? null : 'marketing')}
                 />
+
+                {/* Legal guardian acknowledgement.
+                    PIPA 제22조의2 requires consent from the legal
+                    guardian for any processing of under-14 children's
+                    data. PIPA 제3조 (data minimization) tells us NOT
+                    to collect more than what's necessary, so we ask
+                    only for the explicit checkbox — no name, no
+                    children count. The acknowledgement plus the
+                    `consentedAt` timestamp is the legal record. */}
+                <div
+                  className="bg-blue-50 border-2 border-blue-100 rounded-2xl p-4 space-y-3"
+                  data-testid="guardian-section"
+                >
+                  <div className="flex items-center gap-2">
+                    <Users size={16} className="text-blue-600" />
+                    <span className="text-xs font-black text-blue-900">법정대리인 확인</span>
+                    <span className="text-[9px] font-black text-red-500 bg-red-50 px-1.5 py-0.5 rounded">
+                      필수
+                    </span>
+                  </div>
+                  <p className="text-[11px] font-medium leading-relaxed text-slate-600">
+                    KidQuest는 만 14세 미만 아이가 부모(법정대리인)와 함께 사용하는 가족 서비스입니다.
+                    개인정보보호법 제22조의2에 따라, 아이의 기록·활동 관리를 위해 법정대리인의 동의가 필요합니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setGuardianAck((v) => !v)}
+                    data-testid="guardian-ack-toggle"
+                    className={cn(
+                      'w-full flex items-center gap-3 p-3 rounded-xl border-2 transition-all text-left',
+                      guardianAck
+                        ? 'bg-white border-blue-400'
+                        : 'bg-white border-slate-200',
+                    )}
+                  >
+                    <CheckBox checked={guardianAck} />
+                    <span className="text-xs font-bold text-slate-800">
+                      저는 이 앱에서 관리될 아이(들)의 법정대리인이며, 아이의 개인정보 수집과 이용에 동의합니다.
+                    </span>
+                  </button>
+                  <p className="text-[10px] font-medium text-slate-400 leading-relaxed">
+                    KidQuest는 법정대리인 확인을 위해 별도의 신원정보(이름, 자녀 수 등)를 수집하지 않습니다.
+                    동의 사실과 동의 일시만 안전하게 기록됩니다.
+                  </p>
+                </div>
               </div>
 
               <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex gap-3">

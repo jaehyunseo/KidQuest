@@ -21,6 +21,8 @@ const reminders   = await tsImport('../src/lib/reminders.ts', import.meta.url);
 const hash        = await tsImport('../src/lib/hash.ts', import.meta.url);
 const materializer = await tsImport('../src/lib/questMaterializer.ts', import.meta.url);
 const pastWindow  = await tsImport('../src/lib/pastWindow.ts', import.meta.url);
+const proEnt      = await tsImport('../src/lib/proEntitlement.ts', import.meta.url);
+const premiumCat  = await tsImport('../src/lib/premiumCatalog.ts', import.meta.url);
 
 // Polyfill globals that some modules expect
 globalThis.localStorage = (() => {
@@ -386,5 +388,129 @@ describe('pastWindow.ts — retroactive completion guard', () => {
         );
       }
     }
+  });
+});
+
+// ============================================================
+describe('proEntitlement.ts — Pro tier evaluation', () => {
+  const { evaluateProStatus, recommendNextPlan } = proEnt;
+  const NOW = new Date('2026-04-15T12:00:00');
+
+  test('no account → free, not pro', () => {
+    const s = evaluateProStatus(null, NOW);
+    assert.equal(s.isPro, false);
+    assert.equal(s.tier, 'free');
+    assert.equal(s.isPaid, false);
+  });
+
+  test('undefined tier defaults to free', () => {
+    const s = evaluateProStatus({}, NOW);
+    assert.equal(s.isPro, false);
+    assert.equal(s.tier, 'free');
+  });
+
+  test('pro_lifetime is always active and paid', () => {
+    const s = evaluateProStatus({ proTier: 'pro_lifetime' }, NOW);
+    assert.equal(s.isPro, true);
+    assert.equal(s.tier, 'pro_lifetime');
+    assert.equal(s.isPaid, true);
+    assert.equal(s.renewingSoon, false);
+  });
+
+  test('active pro_yearly with future expiry', () => {
+    const future = new Date('2027-04-15T12:00:00').toISOString();
+    const s = evaluateProStatus(
+      { proTier: 'pro_yearly', proExpiresAt: future },
+      NOW,
+    );
+    assert.equal(s.isPro, true);
+    assert.equal(s.tier, 'pro_yearly');
+    assert.equal(s.isPaid, true);
+    assert.equal(s.renewingSoon, false);
+  });
+
+  test('expired pro_yearly drops to free', () => {
+    const past = new Date('2026-04-14T12:00:00').toISOString();
+    const s = evaluateProStatus(
+      { proTier: 'pro_yearly', proExpiresAt: past },
+      NOW,
+    );
+    assert.equal(s.isPro, false);
+    assert.equal(s.tier, 'free');
+  });
+
+  test('pro_monthly expiring in 3 days → renewingSoon', () => {
+    const near = new Date('2026-04-18T12:00:00').toISOString();
+    const s = evaluateProStatus(
+      { proTier: 'pro_monthly', proExpiresAt: near },
+      NOW,
+    );
+    assert.equal(s.isPro, true);
+    assert.equal(s.renewingSoon, true);
+  });
+
+  test('promo with no expiry is active and not paid', () => {
+    const s = evaluateProStatus({ proTier: 'promo' }, NOW);
+    assert.equal(s.isPro, true);
+    assert.equal(s.tier, 'promo');
+    assert.equal(s.isPaid, false);
+  });
+
+  test('malformed expiry → treat as free (fail closed)', () => {
+    const s = evaluateProStatus(
+      { proTier: 'pro_yearly', proExpiresAt: 'not-a-date' },
+      NOW,
+    );
+    assert.equal(s.isPro, false);
+    assert.equal(s.tier, 'free');
+  });
+
+  test('recommendNextPlan defaults to yearly (the anchor)', () => {
+    assert.equal(recommendNextPlan(null), 'pro_yearly');
+    assert.equal(recommendNextPlan({ proTier: 'free' }), 'pro_yearly');
+    assert.equal(recommendNextPlan({ proTier: 'pro_monthly' }), 'pro_monthly');
+  });
+});
+
+// ============================================================
+describe('premiumCatalog.ts — content gating helpers', () => {
+  const { AVATAR_CATALOG, freeAvatars, premiumAvatars, isItemAllowed, findAvatar } = premiumCat;
+
+  test('free avatars are a non-empty subset', () => {
+    const free = freeAvatars();
+    assert.ok(free.length >= 4, 'at least 4 free starter avatars');
+    assert.ok(free.every((a) => !a.premium));
+  });
+
+  test('premium avatars are non-empty', () => {
+    const pro = premiumAvatars();
+    assert.ok(pro.length >= 6, 'at least 6 premium avatars');
+    assert.ok(pro.every((a) => a.premium));
+  });
+
+  test('free + premium avatars partition the whole catalog', () => {
+    assert.equal(freeAvatars().length + premiumAvatars().length, AVATAR_CATALOG.length);
+  });
+
+  test('all ids are unique', () => {
+    const ids = AVATAR_CATALOG.map((a) => a.id);
+    const unique = new Set(ids);
+    assert.equal(unique.size, ids.length, 'duplicate avatar id');
+  });
+
+  test('findAvatar returns the matching item', () => {
+    const lion = findAvatar('lion');
+    assert.ok(lion);
+    assert.equal(lion.label, '사자');
+    assert.equal(lion.premium, false);
+  });
+
+  test('isItemAllowed gates premium items behind isPro flag', () => {
+    const free = AVATAR_CATALOG.find((a) => !a.premium);
+    const pro  = AVATAR_CATALOG.find((a) => a.premium);
+    assert.equal(isItemAllowed(free, false), true);
+    assert.equal(isItemAllowed(free, true),  true);
+    assert.equal(isItemAllowed(pro,  false), false);
+    assert.equal(isItemAllowed(pro,  true),  true);
   });
 });

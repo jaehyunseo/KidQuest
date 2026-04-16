@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Sparkles, X } from 'lucide-react';
 import { findAchievement } from '../lib/achievements';
 import { cn } from '../lib/utils';
+import { badgeUnlock } from '../lib/sound';
 
 interface BadgeUnlockModalProps {
   /** Queue of newly-unlocked achievement IDs. Modal shows the first and
@@ -14,6 +15,11 @@ interface BadgeUnlockModalProps {
 export function BadgeUnlockModal({ queue, onDismiss }: BadgeUnlockModalProps) {
   const currentId = queue[0];
   const achievement = currentId ? findAchievement(currentId) : undefined;
+
+  // Play badge unlock sound when a new badge appears
+  useEffect(() => {
+    if (currentId) badgeUnlock();
+  }, [currentId]);
 
   // Allow Escape to dismiss
   useEffect(() => {

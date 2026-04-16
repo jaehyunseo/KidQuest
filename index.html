@@ -3,24 +3,39 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>KidQuest (아이퀘스트)</title>
+    <title>KidQuest</title>
     <meta name="description" content="부모와 아이가 함께 약속을 세우고 매일 실천하며, 작은 성취를 통해 건강한 습관을 형성하도록 돕는 가족 동반자 서비스" />
     <meta name="theme-color" content="#facc15" />
+    <meta name="color-scheme" content="light" />
+    <meta name="format-detection" content="telephone=no" />
     <link rel="canonical" href="https://kidquest.pyxora.app/" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+    <!-- iOS standalone web app -->
     <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
-    <meta property="og:title" content="KidQuest · 아이퀘스트" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="KidQuest" />
+    <!-- Android app-capable (legacy name, still read by some browsers) -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="KidQuest" />
+    <meta property="og:title" content="KidQuest" />
     <meta property="og:description" content="아이들의 올바른 습관 형성을 위한 게임형 투두 리스트" />
     <meta property="og:image" content="https://kidquest.pyxora.app/icon-512.png" />
     <meta property="og:url" content="https://kidquest.pyxora.app/" />
     <meta property="og:site_name" content="KidQuest" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="KidQuest · 아이퀘스트" />
+    <meta name="twitter:title" content="KidQuest" />
     <meta name="twitter:description" content="아이들의 올바른 습관 형성을 위한 게임형 투두 리스트" />
     <meta name="twitter:image" content="https://kidquest.pyxora.app/icon-512.png" />
+    <!-- Google AdSense — parent-facing views only. Kid screens show an
+         in-app Pro upsell instead (Families Policy). The loader script
+         is required on all pages for site verification; actual ad units
+         are rendered by <AdBanner/> with env-gated slot IDs. -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9886893201801989"
+            crossorigin="anonymous"></script>
   </head>
   <body>
     <div id="root"></div>

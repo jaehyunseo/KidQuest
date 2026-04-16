@@ -69,62 +69,75 @@ after(async () => {
   if (env) await env.cleanup();
 });
 
+// Filename scheme enforced by the new rules: `{uid}_{token}.{ext}`.
+// A valid token matches [A-Za-z0-9]+ in the rules regex.
+const validName = (uid, ext = 'jpg') => `${uid}_abcDEF123.${ext}`;
+
 // ============================================================
 // Child avatar uploads
 // ============================================================
 describe('families/{id}/children/{childId}/* — avatars', () => {
-  test('authenticated user CAN upload a valid image', async () => {
+  test('authenticated user CAN upload a valid image with uid-prefixed name', async () => {
     const storage = storageAs('parent1');
-    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/avatar_1.jpg`);
+    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/${validName('parent1')}`);
     await assertSucceeds(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
   });
 
-  test('authenticated user CAN read an image', async () => {
-    // First seed via bypassed env
+  test('direct path read is DENIED (must go via download URL token)', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
-      const s = ctx.storage();
       await uploadBytes(
-        ref(s, `families/${FAMILY_ID}/children/kid1/seeded.jpg`),
+        ref(ctx.storage(), `families/${FAMILY_ID}/children/kid1/${validName('seed')}`),
         SMALL_IMAGE.data,
         SMALL_IMAGE.metadata
       );
     });
     const storage = storageAs('child1');
-    await assertSucceeds(
-      getBytes(ref(storage, `families/${FAMILY_ID}/children/kid1/seeded.jpg`))
+    await assertFails(
+      getBytes(ref(storage, `families/${FAMILY_ID}/children/kid1/${validName('seed')}`))
     );
+  });
+
+  test('upload with a name that impersonates another uid is REJECTED', async () => {
+    const storage = storageAs('attacker');
+    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/${validName('parent1')}`);
+    await assertFails(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
+  });
+
+  test('upload without uid prefix is REJECTED', async () => {
+    const storage = storageAs('parent1');
+    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/avatar_1.jpg`);
+    await assertFails(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
   });
 
   test('unauthenticated user CANNOT upload', async () => {
     const storage = storageAs(null);
-    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/anon.jpg`);
+    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/anon_xyz.jpg`);
     await assertFails(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
   });
 
   test('upload over 3MB CANNOT succeed', async () => {
     const storage = storageAs('parent1');
-    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/huge.jpg`);
+    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/${validName('parent1')}`);
     await assertFails(uploadBytes(r, LARGE_IMAGE.data, LARGE_IMAGE.metadata));
   });
 
-  test('non-image file type CANNOT be uploaded', async () => {
+  test('non-image file extension CANNOT be uploaded', async () => {
     const storage = storageAs('parent1');
-    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/malware.txt`);
+    const r = ref(storage, `families/${FAMILY_ID}/children/kid1/parent1_abc.txt`);
     await assertFails(uploadBytes(r, TEXT_FILE.data, TEXT_FILE.metadata));
   });
 
-  test('authenticated user CAN delete their avatar', async () => {
-    // Seed first
+  test('authenticated user CAN delete an avatar', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(
-        ref(ctx.storage(), `families/${FAMILY_ID}/children/kid1/to_delete.jpg`),
+        ref(ctx.storage(), `families/${FAMILY_ID}/children/kid1/${validName('seed')}`),
         SMALL_IMAGE.data,
         SMALL_IMAGE.metadata
       );
     });
     const storage = storageAs('parent1');
     await assertSucceeds(
-      deleteObject(ref(storage, `families/${FAMILY_ID}/children/kid1/to_delete.jpg`))
+      deleteObject(ref(storage, `families/${FAMILY_ID}/children/kid1/${validName('seed')}`))
     );
   });
 });
@@ -133,41 +146,53 @@ describe('families/{id}/children/{childId}/* — avatars', () => {
 // Family feed images
 // ============================================================
 describe('families/{id}/feed/* — feed photos', () => {
-  test('authenticated user CAN upload a feed image', async () => {
+  test('authenticated user CAN upload a feed image with uid-prefixed name', async () => {
     const storage = storageAs('child1');
-    const r = ref(storage, `families/${FAMILY_ID}/feed/post_001.jpg`);
+    const r = ref(storage, `families/${FAMILY_ID}/feed/${validName('child1')}`);
     await assertSucceeds(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
   });
 
-  test('authenticated user CAN read feed images', async () => {
+  test('direct path read is DENIED on feed images', async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       await uploadBytes(
-        ref(ctx.storage(), `families/${FAMILY_ID}/feed/seeded_post.jpg`),
+        ref(ctx.storage(), `families/${FAMILY_ID}/feed/${validName('seed')}`),
         SMALL_IMAGE.data,
         SMALL_IMAGE.metadata
       );
     });
     const storage = storageAs('parent1');
-    await assertSucceeds(
-      getBytes(ref(storage, `families/${FAMILY_ID}/feed/seeded_post.jpg`))
+    await assertFails(
+      getBytes(ref(storage, `families/${FAMILY_ID}/feed/${validName('seed')}`))
     );
+  });
+
+  test('upload without uid prefix is REJECTED', async () => {
+    const storage = storageAs('child1');
+    const r = ref(storage, `families/${FAMILY_ID}/feed/post_001.jpg`);
+    await assertFails(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
+  });
+
+  test('upload that impersonates another uid is REJECTED', async () => {
+    const storage = storageAs('attacker');
+    const r = ref(storage, `families/${FAMILY_ID}/feed/${validName('child1')}`);
+    await assertFails(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
   });
 
   test('unauthenticated user CANNOT upload feed images', async () => {
     const storage = storageAs(null);
-    const r = ref(storage, `families/${FAMILY_ID}/feed/anon.jpg`);
+    const r = ref(storage, `families/${FAMILY_ID}/feed/anon_xyz.jpg`);
     await assertFails(uploadBytes(r, SMALL_IMAGE.data, SMALL_IMAGE.metadata));
   });
 
   test('oversized feed image CANNOT be uploaded', async () => {
     const storage = storageAs('parent1');
-    const r = ref(storage, `families/${FAMILY_ID}/feed/huge_post.jpg`);
+    const r = ref(storage, `families/${FAMILY_ID}/feed/${validName('parent1')}`);
     await assertFails(uploadBytes(r, LARGE_IMAGE.data, LARGE_IMAGE.metadata));
   });
 
   test('non-image feed upload CANNOT succeed', async () => {
     const storage = storageAs('parent1');
-    const r = ref(storage, `families/${FAMILY_ID}/feed/doc.txt`);
+    const r = ref(storage, `families/${FAMILY_ID}/feed/parent1_abc.txt`);
     await assertFails(uploadBytes(r, TEXT_FILE.data, TEXT_FILE.metadata));
   });
 });

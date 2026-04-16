@@ -447,7 +447,7 @@ export function FamilySettingsDrawer({
                 </h3>
                 <div className="bg-white border border-slate-200 rounded-2xl p-5">
                   <p className="text-[10px] font-bold text-slate-400 mb-3">
-                    부모 관리 모드 진입 비밀번호를 변경합니다. 기본값은 1234 입니다.
+                    부모 모드 진입 비밀번호를 변경합니다. 기본값은 1234 입니다.
                   </p>
                   <PasswordChangeForm onChange={onChangePassword} showAlert={showAlert} />
                 </div>

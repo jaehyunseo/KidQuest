@@ -10,6 +10,7 @@ import {
 import { cn } from '../../lib/utils';
 import { CategoryIcon } from '../../components/CategoryIcon';
 import { resolveCategory } from '../../lib/categoryDisplay';
+import { ProUpsellBanner } from '../../components/ProUpsellBanner';
 import { GroupProgressCard } from './GroupProgressCard';
 
 export function ChildDashboard({
@@ -21,6 +22,8 @@ export function ChildDashboard({
   isLoadingAI,
   onRefreshAI,
   groups,
+  isPro,
+  onUpsell,
 }: {
   quests: Quest[],
   customCategories: CustomCategory[],
@@ -30,13 +33,15 @@ export function ChildDashboard({
   isLoadingAI: boolean,
   onRefreshAI: () => void,
   groups: QuestGroup[],
+  isPro: boolean,
+  onUpsell: () => void,
 }) {
   const sortedQuests = useMemo(() => {
     return [...quests].sort((a, b) => (a.completed === b.completed ? 0 : a.completed ? 1 : -1));
   }, [quests]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 lg:h-full lg:flex lg:flex-col lg:min-h-0 lg:space-y-4">
       {/* Point Card */}
       <motion.div 
         initial={{ scale: 0.9, opacity: 0 }}
@@ -80,6 +85,8 @@ export function ChildDashboard({
         </button>
       </div>
 
+      <ProUpsellBanner isPro={isPro} onUpsell={onUpsell} />
+
       {/* Quest Groups */}
       {groups.length > 0 && (
         <div className="space-y-3">
@@ -90,15 +97,15 @@ export function ChildDashboard({
       )}
 
       {/* Quest List */}
-      <div className="space-y-4">
-        <div className="flex justify-between items-center">
+      <div className="space-y-4 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
+        <div className="flex justify-between items-center lg:shrink-0">
           <h2 className="font-black text-xl text-slate-800">오늘의 미션</h2>
           <span className="text-xs font-bold text-slate-400">
             {quests.filter(q => q.completed).length} / {quests.length} 완료
           </span>
         </div>
-        
-        <div className="space-y-3">
+
+        <div className="space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto scrollbar-hide lg:pr-1">
           <AnimatePresence mode="popLayout">
             {sortedQuests.map((quest) => {
               const cat = resolveCategory(quest.category, customCategories);

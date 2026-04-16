@@ -8,3 +8,20 @@ playwright-report/
 *.log
 .env*
 !.env.example
+
+# Capacitor / Android build artifacts — keep `android/` itself
+# tracked so Gradle config + Java sources are versioned, but
+# exclude generated build output and local IDE files.
+android/.gradle/
+android/.idea/
+android/build/
+android/app/build/
+android/local.properties
+android/captures/
+android/app/release/
+android/app/debug/
+android/.cxx/
+android/app/google-services.json
+*.keystore
+*.jks
+keystore.properties

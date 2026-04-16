@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://pyxora.app/</loc><lastmod>2026-04-15</lastmod><priority>1.0</priority></url>
+  <url><loc>https://pyxora.app/about.html</loc><lastmod>2026-04-15</lastmod><priority>0.9</priority></url>
+  <url><loc>https://pyxora.app/products/</loc><lastmod>2026-04-15</lastmod><priority>0.9</priority></url>
+  <url><loc>https://pyxora.app/products/kidquest.html</loc><lastmod>2026-04-15</lastmod><priority>0.9</priority></url>
+  <url><loc>https://pyxora.app/blog/</loc><lastmod>2026-04-15</lastmod><priority>0.8</priority></url>
+  <url><loc>https://pyxora.app/blog/kidquest-story.html</loc><lastmod>2026-04-15</lastmod><priority>0.8</priority></url>
+  <url><loc>https://pyxora.app/blog/design-philosophy.html</loc><lastmod>2026-04-12</lastmod><priority>0.8</priority></url>
+  <url><loc>https://pyxora.app/blog/privacy-first.html</loc><lastmod>2026-04-08</lastmod><priority>0.8</priority></url>
+  <url><loc>https://pyxora.app/blog/habits-research.html</loc><lastmod>2026-04-03</lastmod><priority>0.8</priority></url>
+  <url><loc>https://pyxora.app/contact.html</loc><lastmod>2026-04-15</lastmod><priority>0.7</priority></url>
+  <url><loc>https://pyxora.app/privacy.html</loc><lastmod>2026-04-15</lastmod><priority>0.3</priority></url>
+  <url><loc>https://pyxora.app/terms.html</loc><lastmod>2026-04-15</lastmod><priority>0.3</priority></url>
+</urlset>

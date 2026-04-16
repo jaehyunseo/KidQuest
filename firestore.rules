@@ -148,7 +148,13 @@ service cloud.firestore {
           request.resource.data.get('ownerUid', '') == resource.data.get('ownerUid', '') &&
           request.resource.data.get('members', {}).diff(resource.data.get('members', {})).affectedKeys().hasOnly([request.auth.uid]) &&
           request.auth.uid in request.resource.data.get('members', {}) &&
-          request.resource.data.get('memberNames', {}).diff(resource.data.get('memberNames', {})).affectedKeys().hasOnly([request.auth.uid]));
+          request.resource.data.get('memberNames', {}).diff(resource.data.get('memberNames', {})).affectedKeys().hasOnly([request.auth.uid]) &&
+          // Self-join / self-edit never grants parent role. Existing
+          // members must go through the owner/parent path above to be
+          // promoted, and first-time joiners start as 'child'. This
+          // plugs the "set members[uid]='parent' → reload → useAuth
+          // self-heal promotes users.role" escalation path.
+          request.resource.data.get('members', {})[request.auth.uid] == 'child');
       allow delete: if isAdmin();
 
       // -----------------------------------------------------------
@@ -181,13 +187,20 @@ service cloud.firestore {
         allow create: if isFamilyMember(familyId) &&
                       request.resource.data.authorUid == request.auth.uid;
         // Update: author may update freely; other members may only change
-        // the `reactions` map (to toggle their own reaction) or the
+        // the `reactions` map (to toggle their OWN reaction — the diff
+        // of the reactions map must touch only their uid slot) or the
         // denormalized `commentCount` / `lastCommentAt` fields (touched
-        // when they add a comment).
+        // when they add a comment). This blocks cross-user reaction
+        // tampering — previously a bug allowed any family member to
+        // overwrite the entire reactions map.
         allow update: if isFamilyMember(familyId) && (
           resource.data.authorUid == request.auth.uid ||
-          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['reactions', 'commentCount', 'lastCommentAt'])
+          (request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['reactions', 'commentCount', 'lastCommentAt']) &&
+           request.resource.data.get('reactions', {})
+             .diff(resource.data.get('reactions', {}))
+             .affectedKeys()
+             .hasOnly([request.auth.uid]))
         );
         allow delete: if isFamilyMember(familyId) &&
                       resource.data.authorUid == request.auth.uid;
@@ -204,9 +217,32 @@ service cloud.firestore {
       // -----------------------------------------------------------
       // Children
       // -----------------------------------------------------------
+      // Parent creates/deletes. Non-parent family members (children)
+      // may update a small whitelist of fields that reflect legitimate
+      // in-game actions (points, inventory, achievements, etc.). The
+      // whitelist blocks injection of unknown fields (e.g. a rogue
+      // `role` field or direct writes to `name`) from the mobile SDK.
+      // It does NOT bound the *values* of those fields — defense in
+      // depth against tampering would require Cloud Functions.
       match /children/{childId} {
         allow read: if isFamilyMember(familyId) || isAdmin();
-        allow write: if isFamilyMember(familyId) || isAdmin();
+        allow create, delete: if isParentOfFamily(familyId) || isAdmin();
+        allow update: if isParentOfFamily(familyId) || isAdmin() ||
+          (isFamilyMember(familyId) &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly([
+               'totalPoints',
+               'lifetimeEarned',
+               'totalCompleted',
+               'streak',
+               'longestStreak',
+               'lastCompletedDate',
+               'achievements',
+               'inventory',
+               'level',
+               'avatar',     // emoji avatar — set by child via picker
+               'avatarUrl',  // photo avatar — set by upload flow
+             ]));
 
         // Quests: parents manage; non-parent family members (children) may
         // only toggle `completed` / `completedAt` and the group-bonus
@@ -228,17 +264,32 @@ service cloud.firestore {
           allow write: if isParentOfFamily(familyId) || isAdmin();
         }
 
-        // History is written on quest toggle / reward purchase — any family
-        // member can read/write their own child's history.
+        // History: create is open to family members (quest toggles and
+        // backdated completions write from child UI), but mutation and
+        // deletion are parent/admin only so audit trail can't be
+        // rewritten. Required fields are validated on create to block
+        // malformed rows. Point values are NOT bounded by rules —
+        // that requires a Cloud Function.
         match /history/{historyId} {
-          allow read, write: if isFamilyMember(familyId) || isAdmin();
+          allow read: if isFamilyMember(familyId) || isAdmin();
+          allow create: if isFamilyMember(familyId) &&
+            request.resource.data.keys().hasAll(['timestamp']) &&
+            request.resource.data.get('type', 'quest') in ['quest', 'reward', 'penalty', 'group-bonus'];
+          // Quest-uncheck flow needs to delete the matching history row,
+          // so deletes are allowed for family members. Updates are not
+          // used anywhere and stay parent/admin-only.
+          allow delete: if isFamilyMember(familyId) || isAdmin();
+          allow update: if isParentOfFamily(familyId) || isAdmin();
         }
 
-        // Achievements unlocked per child — family members can read; writes
-        // happen via the app after unlock events.
+        // Achievements — parents / admin only. The live badge list is
+        // also denormalized onto the child doc's `achievements` array
+        // (covered by the field whitelist above); this subcollection
+        // is for structured per-badge documents and should not be
+        // self-writable by children.
         match /achievements/{achievementId} {
           allow read: if isFamilyMember(familyId) || isAdmin();
-          allow write: if isFamilyMember(familyId) || isAdmin();
+          allow write: if isParentOfFamily(familyId) || isAdmin();
         }
       }
     }

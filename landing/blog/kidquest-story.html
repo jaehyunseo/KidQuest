@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>왜 KidQuest를 만들게 됐을까 — Pyxora</title>
+<meta name="description" content="우리 집 식탁에서 반복되던 '내일부터'를 듣다가 시작한 작은 프로젝트의 이야기. 아이가 스스로 목표를 끝내는 감각을 어떻게 도울 수 있을까." />
+<meta name="theme-color" content="#0f172a" />
+<link rel="canonical" href="https://pyxora.app/blog/kidquest-story.html" />
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+<meta property="og:title" content="왜 KidQuest를 만들게 됐을까" />
+<meta property="og:description" content="아이가 스스로 목표를 끝내는 감각을 돕고 싶었습니다." />
+<meta property="og:type" content="article" />
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9886893201801989" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="/assets/styles.css" />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<style>
+  :root { font-family: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif; }
+  .post p { margin: 1.25em 0; color: #334155; line-height: 1.85; }
+  .post h2 { margin: 2.5em 0 0.8em; font-size: 1.5rem; font-weight: 900; color: #0f172a; }
+  .post blockquote { margin: 2em 0; padding: 1em 1.5em; border-left: 4px solid #2563eb; background: #f1f5f9; border-radius: 0 12px 12px 0; font-style: italic; color: #475569; }
+  .post ul { margin: 1em 0; padding-left: 1.5em; }
+  .post li { margin: 0.5em 0; color: #334155; line-height: 1.7; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+<header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-black text-xl tracking-tight text-slate-900">
+      <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-slate-900 flex items-center justify-center text-white text-sm">P</span>
+      Pyxora
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-bold text-slate-600">
+      <a href="/" class="hover:text-slate-900">홈</a>
+      <a href="/about.html" class="hover:text-slate-900">소개</a>
+      <a href="/products/" class="hover:text-slate-900">제품</a>
+      <a href="/blog/" class="text-slate-900">블로그</a>
+      <a href="/contact.html" class="hover:text-slate-900">문의</a>
+    </nav>
+  </div>
+</header>
+
+<main class="max-w-2xl mx-auto px-5 py-16">
+  <a href="/blog/" class="text-xs font-black text-blue-600 hover:text-blue-700">← 블로그 목록</a>
+
+  <div class="mt-8">
+    <div class="flex items-center gap-3 text-xs font-black tracking-widest uppercase mb-4">
+      <span class="text-blue-600">Story</span>
+      <span class="text-slate-300">·</span>
+      <span class="text-slate-400">2026년 4월 15일</span>
+    </div>
+    <h1 class="text-3xl md:text-5xl font-black text-slate-900 tracking-tight leading-[1.1]">왜 KidQuest를 만들게 됐을까</h1>
+    <p class="mt-6 text-lg text-slate-600 leading-relaxed">우리 아이가 "내일부터"를 반복하는 걸 보며 시작된 아주 작은 프로젝트의 이야기.</p>
+  </div>
+
+  <article class="post mt-14">
+
+    <p>시작은 저희 집 식탁이었습니다. 초등학교 2학년인 아이에게 저녁마다 "이 닦았니", "책가방 정리했어?", "숙제는?", "내일 준비물 챙겼니?"를 물어보는 것이 일상이었습니다. 아이는 "응, 할 거야", "이따 할게", "내일부터 잘할게"라고 대답했습니다. 대답은 성실했지만, 다음 날이 되면 같은 장면이 반복됐습니다.</p>
+
+    <p>저희 부부는 이 반복이 아이의 잘못이 아니라는 것을 알고 있었습니다. 아이는 한 번에 기억해야 할 일이 너무 많았고, 매일의 일과가 추상적이었으며, "해야 한다"는 말은 아이에게 아무런 그림으로 떠오르지 않았습니다. 반면 저희는 점점 더 큰 목소리로 반복하게 됐고, 아이는 점점 작게 대답했습니다. 그 자리에서 사라지는 건 저희의 인내심만이 아니라, 아이의 주도성이기도 했습니다.</p>
+
+    <h2>문제는 "해야 하는 일"이 아니었다</h2>
+
+    <p>처음에는 단순히 체크리스트 앱을 써봤습니다. 흔한 Todo 앱을 아이 이름으로 만들어주고, 해야 할 일을 부모가 적어주는 방식이었습니다. 며칠은 잘 되는 것 같았지만 결과는 비슷했습니다. 아이에게 그 리스트는 "엄마 아빠가 또 만든 새로운 잔소리"였습니다. 주체가 여전히 부모였기 때문입니다.</p>
+
+    <p>그때 깨달았습니다. 문제는 "해야 하는 일을 기억하지 못한다"가 아니었습니다. 진짜 문제는 "해야 하는 일이 내 일이 아니다"였습니다. 리스트의 주인이 아이가 아닐 때, 아이는 그것을 자신의 과제가 아닌 외부의 요구로 느꼈습니다. 심리학에서 이야기하는 <b>자기결정성(self-determination)</b>의 부재였습니다.</p>
+
+    <blockquote>시켜서 하는 숙제와 내가 끝낸 퀘스트는 다른 경험이다. 같은 일을 하는 것처럼 보여도, 아이가 남기는 기억은 완전히 다르다.</blockquote>
+
+    <h2>게임이 잘 하는 것</h2>
+
+    <p>역설적으로 아이가 스스로 잘 하는 것이 있었습니다. 게임이었습니다. 아이는 게임 안에서 목표를 세우고, 그것을 달성하기 위해 전략을 짜고, 실패해도 다시 시도했습니다. 누가 시키지 않아도 스스로 어떤 퀘스트를 먼저 할지 고민했습니다. 게임 속에서 아이는 주체였고, 밖에서는 객체였습니다.</p>
+
+    <p>그 차이를 만드는 것이 무엇일지 분석해봤습니다. 게임에는 몇 가지 공통 요소가 있었습니다:</p>
+
+    <ul>
+      <li><b>명확한 목표</b> — 무엇을 하면 어떤 결과가 나오는지 즉시 알 수 있다.</li>
+      <li><b>선택권</b> — 어떤 퀘스트를 먼저 할지 스스로 고른다.</li>
+      <li><b>즉각적 피드백</b> — 완료하면 곧바로 눈에 보이는 결과가 나온다.</li>
+      <li><b>성취의 시각화</b> — 포인트, 레벨, 배지 같은 것으로 나의 성장이 보인다.</li>
+      <li><b>회복 가능한 실패</b> — 실수해도 다시 시도할 수 있다. 영구적인 낙인이 없다.</li>
+    </ul>
+
+    <p>이 요소들을 아이의 일상에 그대로 가져오면 어떨까? 숙제와 정리와 양치를 게임의 퀘스트처럼 다룬다면? 그것이 KidQuest의 출발점이었습니다.</p>
+
+    <h2>첫 번째 버전은 종이였습니다</h2>
+
+    <p>코드를 한 줄도 쓰기 전에, 저희는 A4 용지에 퀘스트 카드를 그려서 냉장고에 붙였습니다. "퀘스트 1: 책가방 정리 - 10 포인트", "퀘스트 2: 숙제 - 20 포인트", "보상: 30 포인트 = 젤리 한 봉지". 아이는 자신의 포인트를 직접 세었고, 보상을 고를 때 신중했습니다. 무엇보다 <b>스스로 퀘스트를 추가하고 싶다</b>고 말했습니다.</p>
+
+    <p>"엄마, 나 양치도 퀘스트에 넣을래." 이 한 문장이 모든 것의 방향을 정했습니다. 아이가 스스로 목표를 추가하고 싶어 한다는 것. 그것은 우리가 어떤 설계를 해야 하는지를 명확하게 알려줬습니다.</p>
+
+    <h2>그래서 앱이 되었습니다</h2>
+
+    <p>종이 버전은 곧 한계를 보였습니다. 퀘스트를 매일 다시 그려야 했고, 포인트 계산이 번거로워졌으며, 기록이 사라졌습니다. 그래서 저녁에 노트북을 열고 첫 프로토타입을 만들기 시작했습니다. KidQuest의 시작이었습니다.</p>
+
+    <p>개발하면서 가장 신경 쓴 것은 "아이가 주인이 되는 감각"이었습니다. 부모 화면과 아이 화면을 분리하고, 아이 화면에서는 퀘스트를 직접 체크하고 보상을 직접 고르도록 했습니다. 부모는 감시자가 아니라 퀘스트 설계자가 되었고, 아이는 그 퀘스트를 수행하는 주인공이 되었습니다.</p>
+
+    <p>지금도 KidQuest는 조금씩 다듬어지고 있습니다. 저희 아이가 실제로 매일 쓰고 있고, 그 피드백이 곧 다음 기능으로 이어집니다. 완벽하지는 않지만, 적어도 저녁 식탁의 풍경은 바뀌었습니다. "내일부터"라는 말은 이제 잘 들리지 않습니다. 대신 "나 이거 끝냈어!"라는 말이 들립니다. 그 한 문장을 듣기 위해 시작한 프로젝트입니다.</p>
+
+    <p>KidQuest를 써보고 싶다면 <a href="https://kidquest.pyxora.app" class="text-blue-600 font-bold hover:underline">여기서</a> 무료로 시작할 수 있습니다. 피드백은 언제나 <a href="mailto:hello@pyxora.app" class="text-blue-600 font-bold hover:underline">hello@pyxora.app</a>으로 환영합니다.</p>
+
+  </article>
+
+  <div class="mt-16 pt-10 border-t border-slate-200">
+    <p class="text-xs font-black tracking-widest uppercase text-slate-400">다음 글</p>
+    <a href="/blog/design-philosophy.html" class="mt-2 block text-xl font-black text-slate-900 hover:text-blue-700">가족 친화 앱을 설계할 때 우리가 피하는 것들 →</a>
+  </div>
+</main>
+
+<footer class="bg-slate-950 text-slate-400 text-sm mt-20">
+  <div class="max-w-6xl mx-auto px-5 py-14 grid md:grid-cols-4 gap-10">
+    <div class="md:col-span-2">
+      <div class="flex items-center gap-2 font-black text-lg text-white">
+        <span class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-slate-800 flex items-center justify-center text-white text-xs">P</span>
+        Pyxora
+      </div>
+      <p class="mt-4 text-slate-400 leading-relaxed max-w-sm">가족과 아이를 위한 따뜻한 소프트웨어를 만드는 1인 인디 스튜디오.</p>
+      <p class="mt-4 text-slate-500 text-xs">문의: <a href="mailto:hello@pyxora.app" class="text-slate-300 hover:text-white">hello@pyxora.app</a></p>
+    </div>
+    <div>
+      <h4 class="text-white font-black mb-3">둘러보기</h4>
+      <ul class="space-y-2">
+        <li><a href="/about.html" class="hover:text-white">소개</a></li>
+        <li><a href="/products/" class="hover:text-white">제품</a></li>
+        <li><a href="/blog/" class="hover:text-white">블로그</a></li>
+        <li><a href="/contact.html" class="hover:text-white">문의</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="text-white font-black mb-3">법적 고지</h4>
+      <ul class="space-y-2">
+        <li><a href="/privacy.html" class="hover:text-white">개인정보처리방침</a></li>
+        <li><a href="/terms.html" class="hover:text-white">이용약관</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-slate-800">
+    <div class="max-w-6xl mx-auto px-5 py-6 text-xs text-slate-500">© 2026 Pyxora. All rights reserved.</div>
+  </div>
+</footer>
+
+</body>
+</html>

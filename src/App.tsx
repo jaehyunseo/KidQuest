@@ -53,9 +53,12 @@ import {
   nextStreak,
 } from './lib/achievements';
 import { evalPastWindow } from './lib/pastWindow';
+import { evaluateProStatus } from './lib/proEntitlement';
+import { ProUpsellModal, type UpsellReason } from './features/pro/ProUpsellModal';
+import { AVATAR_CATALOG } from './lib/premiumCatalog';
 import { PrivacyConsentModal, type ConsentResult } from './features/auth/PrivacyConsentModal';
 import { CURRENT_CONSENT_VERSION } from './features/auth/consent';
-import { SOUNDS, playSound } from './lib/sound';
+import * as sfx from './lib/sound';
 import { generateEncouragementText } from './lib/gemini';
 import { CategoryIcon } from './components/CategoryIcon';
 import { Avatar } from './components/Avatar';
@@ -141,6 +144,20 @@ export default function App() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [dayKey, setDayKey] = useState<string>(localDateKey());
   const [unlockQueue, setUnlockQueue] = useState<string[]>([]);
+  // Pro upsell modal — triggered by gated actions (second child,
+  // premium avatar pick, etc). Kept at the App level so any subtree
+  // can funnel into the single modal via `openUpsell()`.
+  const [upsellModal, setUpsellModal] = useState<{ open: boolean; reason: UpsellReason }>({
+    open: false,
+    reason: 'generic',
+  });
+  const openUpsell = (reason: UpsellReason) =>
+    setUpsellModal({ open: true, reason });
+  const closeUpsell = () => setUpsellModal((prev) => ({ ...prev, open: false }));
+  // Derived Pro status — UI gates read this synchronously. Recomputed
+  // on every render so an expired trial naturally flips to 'free'
+  // without needing a dedicated timer.
+  const proStatus = evaluateProStatus(userAccount);
 
   // Track the current local day. Bumps on visibility change (returning
   // to the tab the next morning) and on a 1-minute interval (for tabs
@@ -379,6 +396,7 @@ export default function App() {
       updateDoc(childRef, { level: newLevel }).catch(err => {
         handleFirestoreError(err, OperationType.UPDATE, childRef.path);
       });
+      sfx.levelUp();
       confetti({
         particleCount: 150,
         spread: 70,
@@ -434,13 +452,22 @@ export default function App() {
     if (!user) return;
     try {
       const userRef = doc(db, 'users', user.uid);
+      const now = new Date().toISOString();
       await updateDoc(userRef, {
-        consentedAt: new Date().toISOString(),
+        consentedAt: now,
         consentVersion: CURRENT_CONSENT_VERSION,
         consentPrivacy: consent.privacy,
         consentTerms: consent.terms,
         consentAge: consent.age,
         consentMarketing: consent.marketing,
+        // Structured guardian acknowledgement. Per PIPA Article 3
+        // (data minimization), we record only the fact and timestamp
+        // of the legal-guardian acknowledgement — no name, no count.
+        guardianConsent: {
+          version: CURRENT_CONSENT_VERSION,
+          consentedAt: now,
+          acknowledged: consent.guardianAck,
+        },
       });
       setConsentOpen(false);
     } catch (error) {
@@ -492,7 +519,7 @@ export default function App() {
       PAST_WINDOW_DAYS,
     );
     if (decision.allowed === false) {
-      playSound(SOUNDS.ERROR);
+      sfx.error();
       if (decision.reason === 'future') {
         showAlert('아직 이른 미션', '이 미션은 아직 시작할 수 없어요. 그날이 되면 다시 만나요!');
       } else {
@@ -510,7 +537,7 @@ export default function App() {
     const childId = selectedChildId;
 
     if (newCompleted) {
-      playSound(SOUNDS.SUCCESS);
+      sfx.questComplete();
       const batch = writeBatch(db);
 
       // Streak bookkeeping. Retroactive (past-scheduled) completions
@@ -589,21 +616,39 @@ export default function App() {
       });
 
       // Group bonus: if this quest belongs to a group and completing it
-      // closes out every sibling for today (and none has claimed the bonus
-      // yet), award bonus points once.
+      // closes out every sibling for today (and the bonus hasn't been
+      // paid for this group today yet), award bonus points once.
+      //
+      // Double-award prevention is gated on the presence of a
+      // `group-bonus` history record for today — that record is the
+      // ground-truth receipt and is explicitly deleted on uncheck. We
+      // deliberately do NOT rely on the `groupBonusClaimed` flag on
+      // sibling quests here, because React state for that flag can lag
+      // a round-trip behind the uncheck's snapshot propagation and
+      // would otherwise block a legitimate re-award after uncheck.
       if (quest.groupId) {
-        // Re-evaluate with the local post-toggle projection so we don't
-        // wait for the snapshot round-trip.
-        const projected = quests.map((q) =>
-          q.id === quest.id ? { ...q, completed: true } : q,
+        const group = groups.find((g) => g.id === quest.groupId);
+        const todayString = new Date().toDateString();
+        const alreadyAwardedToday = history.some(
+          (h) =>
+            h.type === 'group-bonus' &&
+            h.groupId === quest.groupId &&
+            new Date(h.timestamp).toDateString() === todayString,
         );
+        // Strip stale `groupBonusClaimed` from the projection so the
+        // underlying eligibility check (kept for the "all done" math)
+        // doesn't veto on a lagging flag. The history gate above is
+        // the real double-award guard.
+        const projected = quests.map((q) => {
+          const base = { ...q, groupBonusClaimed: false };
+          return q.id === quest.id ? { ...base, completed: true } : base;
+        });
         const { eligible, siblings } = evaluateGroupBonus(
           quest.groupId,
           dayKey,
           projected,
         );
-        const group = groups.find((g) => g.id === quest.groupId);
-        if (eligible && group && group.bonusPoints > 0) {
+        if (!alreadyAwardedToday && eligible && group && group.bonusPoints > 0) {
           const bonusBatch = writeBatch(db);
           siblings.forEach((s) => {
             bonusBatch.update(
@@ -627,7 +672,7 @@ export default function App() {
           });
           try {
             await bonusBatch.commit();
-            playSound(SOUNDS.CELEBRATE);
+            sfx.bonus();
             confetti({
               particleCount: 220,
               spread: 120,
@@ -660,20 +705,55 @@ export default function App() {
       // Uncheck flow. The current balance may go negative if the child
       // already spent points in the shop — that's allowed (so the
       // running balance stays accurate), but warn the user first.
-      const projectedTotal = profile.totalPoints - quest.points;
+
+      // If this quest belongs to a group whose bonus was already claimed
+      // for this day, we must reverse the bonus so that re-checking the
+      // quest can re-award it. Without this, `evaluateGroupBonus` sees
+      // `anyClaimed === true` on the stale sibling flag and the bonus
+      // never fires again.
+      const siblingDate = quest.scheduledDate ?? dayKey;
+      const siblings = quest.groupId
+        ? quests.filter(
+            (q) =>
+              q.groupId === quest.groupId &&
+              (q.scheduledDate ? q.scheduledDate === siblingDate : true),
+          )
+        : [];
+      const bonusWasClaimed = siblings.some((q) => q.groupBonusClaimed === true);
+      const groupForBonus = bonusWasClaimed
+        ? groups.find((g) => g.id === quest.groupId)
+        : undefined;
+      const bonusReversal =
+        groupForBonus && groupForBonus.bonusPoints > 0 ? groupForBonus.bonusPoints : 0;
+
+      const projectedTotal = profile.totalPoints - quest.points - bonusReversal;
       const performUncheck = async () => {
-        playSound(SOUNDS.CLICK);
+        sfx.questUncheck();
         const batch = writeBatch(db);
 
         batch.update(doc(db, 'families', familyId, 'children', childId, 'quests', id), {
           completed: false,
           completedAt: null,
+          groupBonusClaimed: false,
         });
+
+        // Clear the bonus-claimed flag on every sibling so the next
+        // completion can re-evaluate from a clean slate.
+        if (bonusReversal > 0) {
+          siblings.forEach((s) => {
+            if (s.id !== id) {
+              batch.update(
+                doc(db, 'families', familyId, 'children', childId, 'quests', s.id),
+                { groupBonusClaimed: false },
+              );
+            }
+          });
+        }
 
         // lifetimeEarned drives level — keep monotonic, clamp at 0.
         const rolledBackLifetime = Math.max(
           0,
-          (profile.lifetimeEarned ?? profile.totalPoints) - quest.points,
+          (profile.lifetimeEarned ?? profile.totalPoints) - quest.points - bonusReversal,
         );
         batch.update(doc(db, 'families', familyId, 'children', childId), {
           totalPoints: projectedTotal,
@@ -692,6 +772,22 @@ export default function App() {
           batch.delete(doc(db, 'families', familyId, 'children', childId, 'history', recordToDelete.id));
         }
 
+        // Also delete the group-bonus history record for the same day so
+        // the calendar and totals stay consistent with the reversal.
+        if (bonusReversal > 0 && quest.groupId) {
+          const bonusRecord = history.find(
+            (h) =>
+              h.type === 'group-bonus' &&
+              h.groupId === quest.groupId &&
+              new Date(h.timestamp).toDateString() === targetDayString,
+          );
+          if (bonusRecord) {
+            batch.delete(
+              doc(db, 'families', familyId, 'children', childId, 'history', bonusRecord.id),
+            );
+          }
+        }
+
         try {
           await batch.commit();
         } catch (error) {
@@ -699,10 +795,21 @@ export default function App() {
         }
       };
 
+      const deductLabel =
+        bonusReversal > 0
+          ? `${quest.points}P + 그룹 보너스 ${bonusReversal}P`
+          : `${quest.points}P`;
+
       if (projectedTotal < 0) {
         showConfirm(
           '미션 취소',
-          `'${quest.title}' 완료를 취소할까요?\n${quest.points}P가 차감돼요.\n\n⚠️ 현재 잔액 ${profile.totalPoints}P에서 차감하면 ${projectedTotal}P (마이너스)가 돼요.`,
+          `'${quest.title}' 완료를 취소할까요?\n${deductLabel}가 차감돼요.\n\n⚠️ 현재 잔액 ${profile.totalPoints}P에서 차감하면 ${projectedTotal}P (마이너스)가 돼요.`,
+          () => { void performUncheck(); },
+        );
+      } else if (bonusReversal > 0) {
+        showConfirm(
+          '미션 취소',
+          `'${quest.title}' 완료를 취소하면 그룹 보너스 ${bonusReversal}P도 함께 회수돼요. 계속할까요?`,
           () => { void performUncheck(); },
         );
       } else {
@@ -741,7 +848,7 @@ export default function App() {
     }
     const decision = evalPastWindow(dateKey, dayKey, 7);
     if (decision.allowed === false) {
-      playSound(SOUNDS.ERROR);
+      sfx.error();
       showAlert(
         '수정 불가',
         decision.reason === 'future'
@@ -788,7 +895,7 @@ export default function App() {
 
     try {
       await batch.commit();
-      playSound(SOUNDS.SUCCESS);
+      sfx.coinCollect();
     } catch (error) {
       handleFirestoreError(
         error,
@@ -831,7 +938,7 @@ export default function App() {
     const recordDayKey = localDateKey(new Date(record.timestamp));
     const decision = evalPastWindow(recordDayKey, dayKey, 7);
     if (decision.allowed === false) {
-      playSound(SOUNDS.ERROR);
+      sfx.error();
       if (decision.reason === 'future') {
         showAlert('수정 불가', '미래 날짜의 기록은 다룰 수 없어요.');
       } else {
@@ -885,10 +992,28 @@ export default function App() {
             );
           }
         }
+        // For a group-bonus record, clear the bonus-claimed flag on every
+        // sibling in that group for the same day so a future re-completion
+        // can re-evaluate the bonus from scratch.
+        if (record.type === 'group-bonus' && record.groupId && recordDayKey === dayKey) {
+          const siblings = quests.filter(
+            (q) =>
+              q.groupId === record.groupId &&
+              (q.scheduledDate ? q.scheduledDate === recordDayKey : true),
+          );
+          siblings.forEach((s) => {
+            if (s.groupBonusClaimed) {
+              batch.update(
+                doc(db, 'families', familyId, 'children', childId, 'quests', s.id),
+                { groupBonusClaimed: false },
+              );
+            }
+          });
+        }
         batch.delete(doc(db, 'families', familyId, 'children', childId, 'history', recordId));
         try {
           await batch.commit();
-          playSound(SOUNDS.CLICK);
+          sfx.questUncheck();
         } catch (error) {
           handleFirestoreError(
             error,
@@ -1071,7 +1196,7 @@ export default function App() {
         timestamp: new Date().toISOString(),
       });
       await batch.commit();
-      playSound(SOUNDS.ERROR);
+      sfx.pointsLose();
       showAlert('패널티 적용', `-${abs}P 차감되었어요. 사유: ${reason || '(미기재)'}`);
     } catch (error) {
       handleFirestoreError(
@@ -1085,15 +1210,15 @@ export default function App() {
   const purchaseReward = (reward: Reward) => {
     if (!userAccount?.familyId || !selectedChildId) return;
     if (profile.totalPoints < reward.points) {
-      playSound(SOUNDS.ERROR);
+      sfx.error();
       showAlert('성장 포인트 부족', '포인트가 부족해요! 미션을 더 지켜볼까요?');
       return;
     }
-    
-    playSound(SOUNDS.CLICK);
+
+    sfx.tap();
     showConfirm('보상 받기', `정말 '${reward.title}' 보상을 받을까요?\n${reward.points}P가 사용되며, 이 작업은 되돌릴 수 없습니다.`, async () => {
       try {
-        playSound(SOUNDS.CELEBRATE);
+        sfx.rewardClaim();
         const batch = writeBatch(db);
         const familyId = userAccount.familyId!;
         const childId = selectedChildId!;
@@ -1151,7 +1276,7 @@ export default function App() {
         }
       } catch (error) {
         console.error("Failed to purchase reward:", error);
-        playSound(SOUNDS.ERROR);
+        sfx.error();
       }
     });
   };
@@ -1314,6 +1439,32 @@ export default function App() {
     }
   };
 
+  // Switch the child's emoji avatar. Gated by Pro — premium catalog
+  // entries silently open the upsell modal instead of writing.
+  const updateChildAvatarEmoji = async (avatarId: string) => {
+    if (!userAccount?.familyId || !selectedChildId) return;
+    const item = AVATAR_CATALOG.find((a) => a.id === avatarId);
+    if (!item) return;
+    if (item.premium && !proStatus.isPro) {
+      openUpsell('premium_avatar');
+      return;
+    }
+    const familyId = userAccount.familyId;
+    const childId = selectedChildId;
+    setProfile((p: UserProfile) => ({ ...p, avatar: item.display }));
+    try {
+      await updateDoc(doc(db, 'families', familyId, 'children', childId), {
+        avatar: item.display,
+      });
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `families/${familyId}/children/${childId}`,
+      );
+    }
+  };
+
   const removeChildPhoto = async () => {
     if (!userAccount?.familyId || !selectedChildId) return;
     const familyId = userAccount.familyId;
@@ -1442,28 +1593,32 @@ export default function App() {
     const nextHash = await saltedHash(next, salt);
     const updatedAt = new Date().toISOString();
 
-    // Dual-write: try BOTH the private subdoc AND the family root doc.
-    // Either path alone is sufficient for future verification — this makes
-    // password change work regardless of whether firestore.rules have
-    // been deployed yet.
-    const attempts = await Promise.allSettled([
-      setDoc(
+    // Write the hash ONLY to the parent-only private subdoc. The family
+    // root doc is readable by any authenticated user (required for the
+    // join-by-invite-code flow) and must never carry secrets. Legacy
+    // deployments may still have `parentPasswordHash` on the root doc —
+    // we proactively scrub those fields on every password change.
+    try {
+      await setDoc(
         doc(db, 'families', familyId, 'private', 'config'),
         { parentPasswordHash: nextHash, parentPasswordSalt: salt, updatedAt },
-        { merge: true }
-      ),
-      updateDoc(doc(db, 'families', familyId), {
-        parentPasswordHash: nextHash,
-        parentPasswordSalt: salt,
-      }),
-    ]);
+        { merge: true },
+      );
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.UPDATE, `families/${familyId}/private/config`);
+      return { ok: false, error: err?.message || '저장 중 오류가 발생했어요' };
+    }
 
-    const anySuccess = attempts.some((r) => r.status === 'fulfilled');
-    if (!anySuccess) {
-      const firstError = attempts.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
-      const msg = firstError?.reason?.message || '저장 중 오류가 발생했어요';
-      handleFirestoreError(firstError?.reason, OperationType.UPDATE, `families/${familyId}`);
-      return { ok: false, error: msg };
+    // Best-effort scrub of legacy fields on the root doc. Ignore
+    // failures — if the caller lacks permission to touch the root doc
+    // the new password is still safely stored in the private subdoc.
+    try {
+      await updateDoc(doc(db, 'families', familyId), {
+        parentPasswordHash: deleteField(),
+        parentPasswordSalt: deleteField(),
+      });
+    } catch (scrubErr) {
+      console.warn('[security] legacy password field scrub skipped:', scrubErr);
     }
     return { ok: true };
   };
@@ -1617,6 +1772,13 @@ export default function App() {
 
   const addChild = async (name: string, avatar: string) => {
     if (!userAccount?.familyId) return;
+    // Free tier is capped at 1 child. On the second+ add attempt we
+    // open the upsell modal instead of creating the doc, and leave
+    // the caller free to retry after upgrade.
+    if (children.length >= 1 && !proStatus.isPro) {
+      openUpsell('second_child');
+      return;
+    }
     try {
       const childrenRef = collection(db, 'families', userAccount.familyId, 'children');
       const newChild: Omit<ChildProfile, 'id'> = {
@@ -1660,15 +1822,30 @@ export default function App() {
   const generateEncouragement = async () => {
     setIsLoadingAI(true);
     const text = await generateEncouragementText(
-      quests.filter(q => q.completed).map(q => q.title)
+      quests.filter(q => q.completed).map(q => q.title),
+      quests.length,
+      { streak: profile?.streak, now: new Date() },
     );
     if (text) setEncouragement(text);
     setIsLoadingAI(false);
   };
 
+  // Refresh the encouragement message whenever the quest set changes
+  // shape (loaded for the first time, child switched, count changed).
+  // Toggling individual completion does NOT trigger a new message —
+  // we want it stable during a single session unless the user hits
+  // the refresh button.
   useEffect(() => {
-    generateEncouragement();
-  }, []);
+    if (quests.length === 0 && !encouragement) {
+      // Initial paint with no data yet — show the "starter" pool.
+      void generateEncouragement();
+      return;
+    }
+    if (quests.length > 0 && !encouragement) {
+      void generateEncouragement();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quests.length, selectedChildId]);
 
   if (!isAuthReady) {
     return (
@@ -1704,7 +1881,7 @@ export default function App() {
               <p className="text-xl text-slate-400 font-medium max-w-lg leading-relaxed">
                 아이들의 성취를 기록하고, 가족의 유대감을 강화하세요. <br />
                 부모와 아이가 함께 약속을 세우고 매일 실천하며,
-                작은 성취를 평생의 힘으로 키워가는 가족 습관 동반자, 아이퀘스트.
+                작은 성취를 평생의 힘으로 키워가는 가족 습관 동반자, KidQuest.
               </p>
             </motion.div>
 
@@ -1771,7 +1948,7 @@ export default function App() {
             <div className="space-y-6">
               <button 
                 onClick={() => {
-                  playSound(SOUNDS.CLICK);
+                  sfx.tap();
                   handleLoginClick();
                 }}
                 className="w-full group relative flex items-center justify-center gap-4 bg-slate-900 text-white font-black py-6 px-8 rounded-2xl transition-all hover:bg-slate-800 active:scale-[0.98] shadow-2xl shadow-slate-200"
@@ -1798,10 +1975,30 @@ export default function App() {
           <footer className="space-y-6">
             <div className="h-px bg-slate-100 w-full"></div>
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              <span>© 2024 KidQuest Platform</span>
+              <span>© 2026 KidQuest · Pyxora</span>
               <div className="flex gap-6">
-                <span className="hover:text-slate-600 cursor-pointer transition-colors">Terms of Service</span>
-                <span className="hover:text-slate-600 cursor-pointer transition-colors">Privacy Policy</span>
+                <a
+                  href="/terms.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-slate-600 transition-colors"
+                >
+                  Terms of Service
+                </a>
+                <a
+                  href="/privacy.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-slate-600 transition-colors"
+                >
+                  Privacy Policy
+                </a>
+                <a
+                  href="mailto:hello@pyxora.app"
+                  className="hover:text-slate-600 transition-colors"
+                >
+                  Contact
+                </a>
               </div>
             </div>
           </footer>
@@ -1860,16 +2057,19 @@ export default function App() {
     );
   }
 
+  const isParentAuthedMode = isParentMode && isParentAuthenticated;
+
   return (
-    <div className="min-h-screen bg-[#FDFCF0] font-sans text-slate-900 pb-24 md:pb-0 md:pl-24">
+    <div className="h-screen flex flex-col bg-[#FDFCF0] font-sans text-slate-900 md:pl-24 overflow-hidden">
       <AnnouncementBanner />
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 md:px-8 py-4 sticky top-0 z-30 flex justify-between items-center shadow-sm">
+      {/* Header — hidden in authenticated parent mode (TopBar replaces it) */}
+      {!isParentAuthedMode && (
+      <header className="shrink-0 bg-white/80 backdrop-blur-md border-b border-slate-200 px-4 md:px-8 py-4 z-30 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-3">
           <div className="relative group">
             <button 
               onClick={() => {
-                playSound(SOUNDS.CLICK);
+                sfx.tap();
                 setIsParentMode(true);
               }}
               className="w-10 h-10 md:w-14 md:h-14 bg-yellow-400 rounded-2xl flex items-center justify-center shadow-inner cursor-pointer hover:scale-105 transition-transform overflow-hidden"
@@ -1887,7 +2087,7 @@ export default function App() {
               childrenList={children}
               selectedId={selectedChildId}
               onSelect={(id) => {
-                playSound(SOUNDS.CLICK);
+                sfx.nav();
                 setSelectedChildId(id);
               }}
             />
@@ -1907,18 +2107,18 @@ export default function App() {
           {!isParentMode && (
             <button 
               onClick={() => {
-                playSound(SOUNDS.CLICK);
+                sfx.tap();
                 setIsParentMode(true);
               }}
               className="p-2 md:p-3 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
-              title="부모님 관리"
+              title="부모 모드"
             >
               <Settings size={20} className="md:w-6 md:h-6" />
             </button>
           )}
           <button 
             onClick={() => {
-              playSound(SOUNDS.CLICK);
+              sfx.tap();
               handleLogout();
             }}
             className="p-2 md:p-3 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
@@ -1928,8 +2128,10 @@ export default function App() {
           </button>
         </div>
       </header>
+      )}
 
-      <main className="max-w-5xl mx-auto p-4 md:p-10">
+      <main className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden overflow-x-hidden pb-24 md:pb-0 flex flex-col">
+        <div className="max-w-5xl w-full mx-auto p-4 md:p-6 lg:p-10 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
         {isParentMode ? (
           !isParentAuthenticated ? (
             <div className="min-h-[60vh] flex items-center justify-center">
@@ -1946,11 +2148,11 @@ export default function App() {
                     e.preventDefault();
                     const ok = await verifyParentPassword(parentPassword);
                     if (ok) {
-                      playSound(SOUNDS.SUCCESS);
+                      sfx.questComplete();
                       setIsParentAuthenticated(true);
                       setParentPassword('');
                     } else {
-                      playSound(SOUNDS.ERROR);
+                      sfx.error();
                       showAlert('인증 실패', '비밀번호가 올바르지 않아요.');
                     }
                   }}
@@ -1973,7 +2175,7 @@ export default function App() {
                     <button 
                       type="button"
                       onClick={() => {
-                        playSound(SOUNDS.CLICK);
+                        sfx.tap();
                         setIsParentMode(false);
                       }}
                       className="flex-1 bg-slate-100 text-slate-500 font-black py-4 rounded-2xl active:scale-95 transition-all"
@@ -2020,7 +2222,7 @@ export default function App() {
               onUploadChildPhoto={uploadChildPhoto}
               onRemoveChildPhoto={removeChildPhoto}
               onExit={() => {
-                playSound(SOUNDS.CLICK);
+                sfx.tap();
                 exitParentMode();
               }}
               family={family}
@@ -2051,10 +2253,12 @@ export default function App() {
               onDeleteGroup={deleteGroup}
               onSetQuestGroup={setQuestGroup}
               onApplyPenalty={applyPenalty}
+              isPro={proStatus.isPro}
             />
             </Suspense>
           )
         ) : (
+          <div className="lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
           <AnimatePresence mode="wait">
             {(viewMode === 'quests' || viewMode === 'calendar') && (
               <motion.div
@@ -2062,27 +2266,28 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
-                className="lg:grid lg:grid-cols-10 lg:gap-6"
+                className="lg:grid lg:grid-cols-10 lg:gap-6 lg:flex-1 lg:min-h-0"
               >
-                <div className={cn("lg:col-span-6", viewMode === 'calendar' && "hidden lg:block")}>
+                <div className={cn("lg:col-span-6 lg:h-full lg:min-h-0", viewMode === 'calendar' && "hidden lg:block")}>
                   <ChildDashboard
                     quests={quests}
                     customCategories={customCategories}
                     onToggle={(id) => {
-                      playSound(SOUNDS.CLICK);
                       toggleQuest(id);
                     }}
                     profile={profile}
                     encouragement={encouragement}
                     isLoadingAI={isLoadingAI}
                     onRefreshAI={() => {
-                      playSound(SOUNDS.CLICK);
+                      sfx.tap();
                       generateEncouragement();
                     }}
                     groups={groups}
+                    isPro={proStatus.isPro}
+                    onUpsell={() => openUpsell('premium_avatar')}
                   />
                 </div>
-                <div className={cn("lg:col-span-4 mt-6 lg:mt-0", viewMode === 'quests' && "hidden lg:block")}>
+                <div className={cn("lg:col-span-4 mt-6 lg:mt-0 lg:h-full lg:min-h-0", viewMode === 'quests' && "hidden lg:block")}>
                   <Suspense fallback={<div className="p-6 text-center text-slate-400 text-xs font-bold">달력을 불러오는 중...</div>}>
                     <LazyCalendarView
                       history={history}
@@ -2102,12 +2307,12 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
+                className="lg:flex-1 lg:min-h-0 lg:flex lg:flex-col"
               >
                 <RewardShop
                   rewards={rewards}
                   profile={profile}
                   onPurchase={(reward) => {
-                    playSound(SOUNDS.CLICK);
                     purchaseReward(reward);
                   }}
                 />
@@ -2119,10 +2324,14 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
+                className="lg:flex-1 lg:min-h-0 lg:flex lg:flex-col"
               >
                 <ProfileView
                   profile={profile}
                   rewards={rewards}
+                  isPro={proStatus.isPro}
+                  onSelectAvatar={updateChildAvatarEmoji}
+                  onUpsell={() => openUpsell('premium_avatar')}
                 />
               </motion.div>
             )}
@@ -2132,6 +2341,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -20 }}
+                className="lg:flex-1 lg:min-h-0 lg:flex lg:flex-col"
               >
                 <Suspense fallback={<div className="p-12 text-center text-slate-400 font-bold">피드를 불러오는 중...</div>}>
                   <FeedView
@@ -2146,15 +2356,17 @@ export default function App() {
               </motion.div>
             )}
           </AnimatePresence>
+          </div>
         )}
+        </div>
       </main>
 
       {/* Navigation */}
       {!isParentMode && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 flex justify-around items-center z-40 md:top-0 md:bottom-0 md:left-0 md:w-24 md:flex-col md:border-t-0 md:border-r md:py-12 md:justify-center md:gap-12">
-          <button 
+          <button
             onClick={() => {
-              playSound(SOUNDS.CLICK);
+              sfx.nav();
               setViewMode('quests');
             }}
             className={cn(
@@ -2167,7 +2379,7 @@ export default function App() {
           </button>
           <button
             onClick={() => {
-              playSound(SOUNDS.CLICK);
+              sfx.nav();
               setViewMode('calendar');
             }}
             className={cn(
@@ -2178,9 +2390,9 @@ export default function App() {
             <CalendarIcon size={28} className="md:w-8 md:h-8" />
             <span className="text-[10px] md:text-xs font-black">기록</span>
           </button>
-          <button 
+          <button
             onClick={() => {
-              playSound(SOUNDS.CLICK);
+              sfx.nav();
               setViewMode('shop');
             }}
             className={cn(
@@ -2193,7 +2405,7 @@ export default function App() {
           </button>
           <button
             onClick={() => {
-              playSound(SOUNDS.CLICK);
+              sfx.nav();
               setViewMode('feed');
             }}
             className={cn(
@@ -2206,7 +2418,7 @@ export default function App() {
           </button>
           <button
             onClick={() => {
-              playSound(SOUNDS.CLICK);
+              sfx.nav();
               setViewMode('profile');
             }}
             className={cn(
@@ -2276,6 +2488,35 @@ export default function App() {
       <BadgeUnlockModal
         queue={unlockQueue}
         onDismiss={(id) => setUnlockQueue((q) => q.filter((x) => x !== id))}
+      />
+
+      {/* Global Pro upsell modal — any gated action funnels here. */}
+      <ProUpsellModal
+        open={upsellModal.open}
+        reason={upsellModal.reason}
+        onClose={closeUpsell}
+        onSelectYearly={() => {
+          // TODO(phase 3): hand off to Google Play Billing / App Store IAP.
+          closeUpsell();
+          showAlert(
+            '결제 준비 중',
+            '인앱 결제는 앱스토어 등록 후 활성화됩니다. 조금만 기다려주세요!',
+          );
+        }}
+        onSelectMonthly={() => {
+          closeUpsell();
+          showAlert(
+            '결제 준비 중',
+            '인앱 결제는 앱스토어 등록 후 활성화됩니다. 조금만 기다려주세요!',
+          );
+        }}
+        onEnterPromoCode={() => {
+          closeUpsell();
+          showAlert(
+            '프로모 코드',
+            '프로모 코드 입력은 곧 지원될 예정이에요.',
+          );
+        }}
       />
     </div>
   );

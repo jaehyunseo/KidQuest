@@ -93,8 +93,8 @@ export function CalendarView({
   }, [selectedDate, isPastSelected, quests, history]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 lg:h-full lg:flex lg:flex-col lg:min-h-0 lg:space-y-4">
+      <div className="flex justify-between items-center lg:shrink-0">
         <h2 className="font-black text-2xl text-slate-800">나의 성장 일기</h2>
         <div className="flex items-center gap-2">
           <button onClick={prevMonth} className="p-2 bg-white rounded-xl border border-slate-100 text-slate-400 hover:text-slate-600">
@@ -109,7 +109,7 @@ export function CalendarView({
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm">
+      <div className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm lg:shrink-0">
         <div className="grid grid-cols-7 gap-1 mb-2">
           {['일', '월', '화', '수', '목', '금', '토'].map(day => (
             <div key={day} className="text-center text-[10px] font-black text-slate-400 uppercase py-2">
@@ -155,6 +155,7 @@ export function CalendarView({
         </div>
       </div>
 
+      <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto scrollbar-hide lg:pr-1">
       <AnimatePresence mode="wait">
         {selectedDate && (
           <motion.div
@@ -364,6 +365,7 @@ export function CalendarView({
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
   );
 }

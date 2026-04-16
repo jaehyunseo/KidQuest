@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>가족 친화 앱을 설계할 때 우리가 피하는 것들 — Pyxora</title>
+<meta name="description" content="중독을 유발하는 패턴, 과도한 게임화, 의도적으로 만든 '한 번만 더'의 순간들 — 많은 앱이 당연하게 쓰는 것들을 우리는 일부러 피합니다." />
+<meta name="theme-color" content="#0f172a" />
+<link rel="canonical" href="https://pyxora.app/blog/design-philosophy.html" />
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+<meta property="og:title" content="가족 친화 앱을 설계할 때 우리가 피하는 것들" />
+<meta property="og:type" content="article" />
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9886893201801989" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="/assets/styles.css" />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<style>
+  :root { font-family: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif; }
+  .post p { margin: 1.25em 0; color: #334155; line-height: 1.85; }
+  .post h2 { margin: 2.5em 0 0.8em; font-size: 1.5rem; font-weight: 900; color: #0f172a; }
+  .post h3 { margin: 1.8em 0 0.5em; font-size: 1.15rem; font-weight: 800; color: #0f172a; }
+  .post blockquote { margin: 2em 0; padding: 1em 1.5em; border-left: 4px solid #2563eb; background: #f1f5f9; border-radius: 0 12px 12px 0; font-style: italic; color: #475569; }
+  .post ul { margin: 1em 0; padding-left: 1.5em; }
+  .post li { margin: 0.5em 0; color: #334155; line-height: 1.7; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+<header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-black text-xl tracking-tight text-slate-900">
+      <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-slate-900 flex items-center justify-center text-white text-sm">P</span>
+      Pyxora
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-bold text-slate-600">
+      <a href="/" class="hover:text-slate-900">홈</a>
+      <a href="/about.html" class="hover:text-slate-900">소개</a>
+      <a href="/products/" class="hover:text-slate-900">제품</a>
+      <a href="/blog/" class="text-slate-900">블로그</a>
+      <a href="/contact.html" class="hover:text-slate-900">문의</a>
+    </nav>
+  </div>
+</header>
+
+<main class="max-w-2xl mx-auto px-5 py-16">
+  <a href="/blog/" class="text-xs font-black text-blue-600 hover:text-blue-700">← 블로그 목록</a>
+
+  <div class="mt-8">
+    <div class="flex items-center gap-3 text-xs font-black tracking-widest uppercase mb-4">
+      <span class="text-blue-600">Design</span>
+      <span class="text-slate-300">·</span>
+      <span class="text-slate-400">2026년 4월 12일</span>
+    </div>
+    <h1 class="text-3xl md:text-5xl font-black text-slate-900 tracking-tight leading-[1.1]">가족 친화 앱을 설계할 때 우리가 피하는 것들</h1>
+    <p class="mt-6 text-lg text-slate-600 leading-relaxed">어떤 결정은 무엇을 넣느냐가 아니라 무엇을 넣지 않느냐로 정의됩니다. 우리가 의도적으로 사용하지 않기로 한 패턴들.</p>
+  </div>
+
+  <article class="post mt-14">
+
+    <p>현대의 앱 디자인에는 거의 기본처럼 사용되는 몇 가지 패턴이 있습니다. 사용자를 앱에 더 오래 머물게 하고, 더 자주 돌아오게 하고, 더 많은 알림을 보내는 기법들입니다. 이 패턴들은 비즈니스 관점에서 매우 효과적이고, 그래서 대부분의 앱이 이를 활용합니다.</p>
+
+    <p>그런데 이 앱의 대상이 <b>아이와 부모</b>라면 이야기가 달라집니다. 우리가 만드는 제품이 실제로 가정에 도움이 되기를 원한다면, "더 오래 쓰게 만드는 것"이 반드시 좋은 목표는 아닙니다. 오히려 "필요한 만큼만 쓰고 덮어두는 것"이 더 건강한 결과일 수 있습니다.</p>
+
+    <p>이 글은 Pyxora가 제품을 만들면서 <b>의도적으로 넣지 않기로 한 것들</b>에 대한 기록입니다. 각 항목은 많은 앱에서 당연하게 쓰이고 있지만, 우리는 한 번씩 멈춰서 "이게 우리 제품에 필요한가?"를 물었고, 대부분 "아니다"라는 답에 도달했습니다.</p>
+
+    <h2>1. 변동 보상 (Variable Rewards)</h2>
+
+    <p>슬롯머신에서 가져온 개념입니다. 보상의 크기와 시점을 예측할 수 없게 만들어, 사용자가 "이번에는 나올까?" 하는 기대로 계속 앱을 열게 만드는 기법입니다. 소셜 미디어의 좋아요 알림, 게임의 가챠, 무작위 성공 애니메이션 등이 모두 여기에 속합니다.</p>
+
+    <p>이 기법이 강력한 이유는 뇌의 도파민 보상 시스템을 직접 건드리기 때문입니다. 문제는 바로 그 이유로 <b>중독적</b>이라는 것입니다. 성인에게도 문제가 되는 이 패턴이 발달 중인 아이의 뇌에 반복적으로 작용한다면, 결과가 좋을 리 없습니다.</p>
+
+    <p>KidQuest에서는 <b>포인트 보상을 예측 가능하게</b> 만들었습니다. "책가방 정리 = 10 포인트"는 언제나 10 포인트입니다. 가끔 20 포인트가 나오지 않습니다. 아이는 자신의 성취가 얼마의 가치를 가지는지 정확히 알고, 그 위에서 예측 가능한 계획을 세울 수 있습니다.</p>
+
+    <h2>2. 무한 스크롤 (Infinite Scroll)</h2>
+
+    <p>페이지 하단에 다다르면 자동으로 다음 콘텐츠가 로드되는 패턴입니다. 사용자가 "끝"을 경험하지 않기 때문에, 멈추기 어려워집니다. 원래 이 패턴은 검색 결과 같은 데이터 탐색을 위해 만들어졌지만, 지금은 소비를 극대화하는 도구로 쓰입니다.</p>
+
+    <p>아이 화면에서 무한 스크롤이 필요한 콘텐츠는 거의 없습니다. 대신 우리는 <b>의도적인 끝</b>을 만듭니다. 하루의 퀘스트 목록은 짧고, 완료하면 "오늘 할 일 끝!"이라는 명확한 종료 신호가 나옵니다. 아이는 앱을 덮고 밖으로 나가도 된다는 허락을 받습니다.</p>
+
+    <h2>3. "한 번만 더" 순간</h2>
+
+    <h3>게임 디자이너가 잘 아는 기법입니다</h3>
+
+    <p>플레이어가 앱을 닫으려 할 때, 마지막에 아주 작은 보상을 보여주거나, "거의 다 왔어요!" 라는 메시지를 띄우거나, 진행률 바를 살짝 채워주는 식으로 <b>한 번만 더</b>를 유도하는 기법입니다. 이것이 반복되면 사용자는 멈추려 할 때마다 멈추지 못합니다.</p>
+
+    <p>우리는 KidQuest에 이 기법을 쓰지 않기로 했습니다. 아이가 퀘스트를 다 끝내면 앱은 조용히 축하하고 그 자리에서 멈춥니다. "다음 미션이 있어요!"라며 더 많은 목표를 제시하지 않습니다. 오늘의 끝은 오늘의 끝이어야 합니다.</p>
+
+    <h2>4. 과도한 푸시 알림</h2>
+
+    <p>많은 앱이 사용자를 다시 끌어오기 위해 푸시 알림을 적극적으로 사용합니다. "오랜만이네요!", "오늘의 미션이 기다려요!", "친구가 활동 중이에요!" 등의 메시지가 하루에 몇 번씩 울립니다.</p>
+
+    <p>우리는 알림을 최소한으로 사용합니다. 현재 KidQuest의 알림은 부모가 직접 설정한 리마인더(예: "저녁 8시 양치 시간")뿐입니다. 앱이 스스로 "돌아와주세요" 메시지를 보내지 않습니다. 아이가 앱을 잊는 것이 나쁜 일이 아니기 때문입니다.</p>
+
+    <h2>5. 소셜 비교</h2>
+
+    <p>랭킹, 리더보드, 친구 비교 — 이 요소들은 동기 부여에 효과적이지만, 동시에 <b>아이의 자존감</b>에 직접적인 영향을 미칩니다. 다른 아이가 더 많은 퀘스트를 끝냈다는 사실이 아이에게 무엇을 가르치는지 저희는 확신할 수 없었습니다.</p>
+
+    <p>그래서 KidQuest의 모든 비교 축은 <b>자기 자신</b>입니다. "어제의 나보다 오늘 더 많이 했는지", "이번 주의 나와 지난 주의 나를 비교". 가족 내부에서도 형제자매 간 직접적인 랭킹은 보이지 않습니다.</p>
+
+    <h2>6. 다크 패턴</h2>
+
+    <p>구독 취소를 어렵게 만드는 버튼, 실수 클릭을 유도하는 배치, "정말 떠나시겠어요?" 같은 감정적 압박 — 이런 다크 패턴은 단기 지표에는 도움이 될 수 있지만, 장기적으로는 신뢰를 갉아먹습니다.</p>
+
+    <p>KidQuest는 구독 해지를 한 번의 클릭으로 할 수 있게 만들었습니다. Pro 기능은 업그레이드 시에도 명확하게 가격을 보여주고, 무료 기능의 사용을 방해하지 않습니다. 우리가 좋은 제품을 만든다면 사용자는 남아있을 것이고, 그렇지 않다면 떠나는 것이 맞습니다.</p>
+
+    <h2>이것은 비즈니스 선택이 아니다</h2>
+
+    <blockquote>이 결정들은 단기 지표로 보면 손해입니다. DAU, 세션 길이, 리텐션 — 거의 모든 지표가 이 패턴들을 쓸 때 더 좋게 나옵니다. 그럼에도 우리가 이를 피하는 이유는, 제품이 가정에 주는 <b>실제 가치</b>와 이런 지표가 항상 일치하지 않기 때문입니다.</blockquote>
+
+    <p>우리는 KidQuest가 좋은 제품이라면 부모와 아이가 자연스럽게 오래 사용할 것이라고 믿습니다. 반대로 이런 기법으로 억지로 끌어온 사용 시간은 제품에 대한 애정이 아니라 의존입니다. 의존은 언젠가 피로로 바뀌고, 피로는 신뢰를 잃게 만듭니다.</p>
+
+    <p>작은 스튜디오의 장점 중 하나는 이런 결정을 주저 없이 내릴 수 있다는 것입니다. 큰 조직에서는 분기 지표에 대한 압박이 있지만, 1인 스튜디오에는 오로지 "이것이 우리가 만들고 싶은 제품인가"라는 질문만 있습니다. 그 질문에 "그렇다"라고 답하기 위해, 우리는 많은 것을 일부러 넣지 않습니다.</p>
+
+  </article>
+
+  <div class="mt-16 pt-10 border-t border-slate-200">
+    <p class="text-xs font-black tracking-widest uppercase text-slate-400">다음 글</p>
+    <a href="/blog/privacy-first.html" class="mt-2 block text-xl font-black text-slate-900 hover:text-blue-700">개인정보 최소 수집을 제품 원칙으로 →</a>
+  </div>
+</main>
+
+<footer class="bg-slate-950 text-slate-400 text-sm mt-20">
+  <div class="max-w-6xl mx-auto px-5 py-14 grid md:grid-cols-4 gap-10">
+    <div class="md:col-span-2">
+      <div class="flex items-center gap-2 font-black text-lg text-white">
+        <span class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-slate-800 flex items-center justify-center text-white text-xs">P</span>
+        Pyxora
+      </div>
+      <p class="mt-4 text-slate-400 leading-relaxed max-w-sm">가족과 아이를 위한 따뜻한 소프트웨어를 만드는 1인 인디 스튜디오.</p>
+      <p class="mt-4 text-slate-500 text-xs">문의: <a href="mailto:hello@pyxora.app" class="text-slate-300 hover:text-white">hello@pyxora.app</a></p>
+    </div>
+    <div>
+      <h4 class="text-white font-black mb-3">둘러보기</h4>
+      <ul class="space-y-2">
+        <li><a href="/about.html" class="hover:text-white">소개</a></li>
+        <li><a href="/products/" class="hover:text-white">제품</a></li>
+        <li><a href="/blog/" class="hover:text-white">블로그</a></li>
+        <li><a href="/contact.html" class="hover:text-white">문의</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="text-white font-black mb-3">법적 고지</h4>
+      <ul class="space-y-2">
+        <li><a href="/privacy.html" class="hover:text-white">개인정보처리방침</a></li>
+        <li><a href="/terms.html" class="hover:text-white">이용약관</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-slate-800">
+    <div class="max-w-6xl mx-auto px-5 py-6 text-xs text-slate-500">© 2026 Pyxora. All rights reserved.</div>
+  </div>
+</footer>
+
+</body>
+</html>

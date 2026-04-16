@@ -36,6 +36,7 @@ import { OnboardingBanner } from './components/OnboardingBanner';
 import { RewardManager } from './components/RewardManager';
 import { CategoryManager } from './components/CategoryManager';
 import { WeeklyReport } from './components/WeeklyReport';
+import { AdBanner } from '../../components/AdBanner';
 import { AVATAR_OPTIONS } from './constants';
 
 type TabKey = 'quests' | 'groups' | 'rewards' | 'penalty' | 'categories' | 'report';
@@ -100,6 +101,7 @@ interface ParentDashboardProps {
   onDeleteGroup: (id: string) => void;
   onSetQuestGroup: (questId: string, groupId: string | null) => Promise<void>;
   onApplyPenalty: (points: number, reason: string) => Promise<void>;
+  isPro: boolean;
 }
 
 export function ParentDashboard(props: ParentDashboardProps) {
@@ -144,6 +146,7 @@ export function ParentDashboard(props: ParentDashboardProps) {
     onDeleteGroup,
     onSetQuestGroup,
     onApplyPenalty,
+    isPro,
   } = props;
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -181,7 +184,7 @@ export function ParentDashboard(props: ParentDashboardProps) {
   };
 
   return (
-    <div className="pb-24">
+    <div className="pb-24 md:pb-6 lg:h-full lg:overflow-y-auto scrollbar-hide">
       <TopBar
         familyName={family?.name || '우리 가족'}
         onOpenSettings={() => setSettingsOpen(true)}
@@ -312,6 +315,13 @@ export function ParentDashboard(props: ParentDashboardProps) {
                     )}
                   </motion.div>
                 </AnimatePresence>
+
+                <AdBanner
+                  isPro={isPro}
+                  slot={process.env.ADSENSE_SLOT_PARENT || undefined}
+                  format="auto"
+                  className="mt-2"
+                />
               </>
             ) : (
               <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] p-12 text-center">

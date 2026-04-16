@@ -79,8 +79,8 @@ export function FeedView({
   const activePost = activePostId ? posts.find((p) => p.id === activePostId) ?? null : null;
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
+    <div className="space-y-5 lg:h-full lg:flex lg:flex-col lg:min-h-0 lg:space-y-4">
+      <div className="flex items-center justify-between lg:shrink-0">
         <div>
           <h2 className="font-black text-2xl text-slate-800">가족 피드</h2>
           <p className="text-xs font-bold text-slate-400 mt-0.5">
@@ -96,6 +96,7 @@ export function FeedView({
         </button>
       </div>
 
+      <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto scrollbar-hide lg:pr-1 space-y-5 lg:space-y-4">
       {loading && posts.length === 0 && (
         <div className="bg-white border border-slate-100 rounded-3xl p-12 text-center">
           <p className="text-slate-400 text-sm font-medium">피드를 불러오는 중...</p>
@@ -123,6 +124,7 @@ export function FeedView({
             showAlert={showAlert}
           />
         ))}
+      </div>
       </div>
 
       <AnimatePresence>

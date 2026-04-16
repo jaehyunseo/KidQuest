@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>개인정보 최소 수집을 제품 원칙으로 — Pyxora</title>
+<meta name="description" content="수집할 수 있는 것과 수집해야 할 것은 다릅니다. 특히 아이를 다루는 앱이라면 더 그렇습니다. 우리가 데이터를 다루는 방식과 기술적 선택에 대해." />
+<meta name="theme-color" content="#0f172a" />
+<link rel="canonical" href="https://pyxora.app/blog/privacy-first.html" />
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml" />
+<meta property="og:title" content="개인정보 최소 수집을 제품 원칙으로" />
+<meta property="og:type" content="article" />
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-9886893201801989" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="/assets/styles.css" />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<style>
+  :root { font-family: "Pretendard Variable", Pretendard, -apple-system, system-ui, sans-serif; }
+  .post p { margin: 1.25em 0; color: #334155; line-height: 1.85; }
+  .post h2 { margin: 2.5em 0 0.8em; font-size: 1.5rem; font-weight: 900; color: #0f172a; }
+  .post blockquote { margin: 2em 0; padding: 1em 1.5em; border-left: 4px solid #2563eb; background: #f1f5f9; border-radius: 0 12px 12px 0; font-style: italic; color: #475569; }
+  .post ul { margin: 1em 0; padding-left: 1.5em; }
+  .post li { margin: 0.5em 0; color: #334155; line-height: 1.7; }
+  .post code { background: #e2e8f0; padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+
+<header class="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-4 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2 font-black text-xl tracking-tight text-slate-900">
+      <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-slate-900 flex items-center justify-center text-white text-sm">P</span>
+      Pyxora
+    </a>
+    <nav class="hidden md:flex items-center gap-8 text-sm font-bold text-slate-600">
+      <a href="/" class="hover:text-slate-900">홈</a>
+      <a href="/about.html" class="hover:text-slate-900">소개</a>
+      <a href="/products/" class="hover:text-slate-900">제품</a>
+      <a href="/blog/" class="text-slate-900">블로그</a>
+      <a href="/contact.html" class="hover:text-slate-900">문의</a>
+    </nav>
+  </div>
+</header>
+
+<main class="max-w-2xl mx-auto px-5 py-16">
+  <a href="/blog/" class="text-xs font-black text-blue-600 hover:text-blue-700">← 블로그 목록</a>
+
+  <div class="mt-8">
+    <div class="flex items-center gap-3 text-xs font-black tracking-widest uppercase mb-4">
+      <span class="text-blue-600">Privacy</span>
+      <span class="text-slate-300">·</span>
+      <span class="text-slate-400">2026년 4월 8일</span>
+    </div>
+    <h1 class="text-3xl md:text-5xl font-black text-slate-900 tracking-tight leading-[1.1]">개인정보 최소 수집을 제품 원칙으로</h1>
+    <p class="mt-6 text-lg text-slate-600 leading-relaxed">수집할 수 있는 것과 수집해야 할 것은 다릅니다. 가족 앱이 데이터를 다루는 방식에 대하여.</p>
+  </div>
+
+  <article class="post mt-14">
+
+    <p>개발자라면 누구나 익숙한 유혹이 있습니다. "나중에 분석할 수 있도록 일단 다 기록해두자"는 생각입니다. 스토리지는 저렴하고, 데이터는 많을수록 좋다는 믿음이 있고, 나중에 어떤 통찰이 나올지 모르니 지금은 최대한 많이 저장하자는 것입니다.</p>
+
+    <p>많은 서비스가 이렇게 설계됩니다. 그리고 결과는 대부분 비슷합니다. 어느 순간 "기록한 데이터로 뭘 할 수 있을까?"라는 질문이 떠오르고, 그때부터 데이터는 자산이 아니라 <b>책임</b>이 됩니다. 유출되면 손해가 나고, 사용자가 삭제를 요청하면 다 지워야 하며, 규제가 바뀌면 전부 감사해야 합니다.</p>
+
+    <p>Pyxora가 KidQuest를 설계하면서 가장 먼저 한 결정 중 하나는, <b>수집하지 않을 것을 먼저 정하는 것</b>이었습니다. "이 데이터 없이 이 기능이 돌아가는가?"를 물었을 때 답이 "그렇다"라면, 그 데이터는 수집하지 않았습니다.</p>
+
+    <h2>수집하지 않는 것들의 목록</h2>
+
+    <p>KidQuest가 <b>수집하지 않는</b> 것들의 일부입니다:</p>
+
+    <ul>
+      <li><b>접속 IP</b> — 누가 언제 어디서 접속했는지 기록하지 않습니다. Firebase가 인증 과정에서 일시적으로 볼 수 있지만, 저희 데이터베이스에는 저장되지 않습니다.</li>
+      <li><b>기기 정보</b> — OS, 브라우저 종류, 화면 크기, 디바이스 식별자 모두 기록하지 않습니다.</li>
+      <li><b>사용 로그</b> — 어떤 화면을 몇 번 열었는지, 어디를 몇 초 봤는지, 어떤 순서로 이동했는지 — 행동 추적을 하지 않습니다.</li>
+      <li><b>법정대리인의 신원 정보</b> — 이름, 연락처, 자녀 수 같은 정보를 요구하지 않습니다. 동의는 체크박스와 일시 기록만으로 성립됩니다.</li>
+      <li><b>카드번호나 결제 상세 정보</b> — 결제 자체는 Google Play 또는 외부 결제 시스템을 통하며, 저희는 영수증 토큰만 받습니다.</li>
+      <li><b>광고 식별자</b> — 아이 화면은 물론, 부모 화면에서도 GAID/IDFA 같은 광고용 식별자는 수집하지 않습니다.</li>
+    </ul>
+
+    <h2>수집하는 것들의 목록</h2>
+
+    <p>반대로, 서비스를 제공하기 위해 <b>반드시 수집하는</b> 것들:</p>
+
+    <ul>
+      <li><b>이메일과 이름</b> — 로그인을 위한 최소 정보. Google 로그인 시 제공되는 정보에 한정합니다.</li>
+      <li><b>가족 정보와 아이 프로필</b> — 가족 이름, 자녀 닉네임, 아바타(이모지).</li>
+      <li><b>퀘스트와 활동 기록</b> — 서비스의 핵심 데이터. 이 기록 없이는 앱이 의미가 없습니다.</li>
+      <li><b>결제 등급</b> — Pro 구독 상태와 만료일.</li>
+    </ul>
+
+    <p>이것이 전부입니다. 15개 미만의 필드로 KidQuest 전체가 돌아갑니다. 더 많은 데이터를 수집할 이유가 없었고, 그래서 수집하지 않았습니다.</p>
+
+    <h2>기술적인 선택들</h2>
+
+    <p>최소 수집을 실현하려면 단순히 "기록을 안 하는 것" 이상의 기술적 선택이 필요합니다. 몇 가지 예를 들면:</p>
+
+    <p><b>Firebase Security Rules로 접근 경계를 강제</b>합니다. 부모는 자신의 가족 데이터만 읽을 수 있고, 자녀는 화이트리스트된 필드(자신의 퀘스트 완료 상태 등)만 쓸 수 있습니다. 데이터베이스 수준에서 경계가 강제되므로, 클라이언트 코드의 실수로도 타인의 데이터에 접근할 수 없습니다.</p>
+
+    <p><b>비밀번호는 평문으로 저장하지 않습니다</b>. 부모 PIN은 Salt + SHA-256 해시로 저장되며, 원본은 클라이언트에 잠깐 존재했다가 즉시 사라집니다. 저희조차 부모의 PIN을 알 수 없습니다.</p>
+
+    <p><b>로컬 우선 저장</b>을 지향합니다. 가능한 많은 상태를 localStorage나 IndexedDB에 저장하고, 서버는 동기화 저장소로만 사용합니다. 이는 성능과 프라이버시 양쪽에 좋습니다.</p>
+
+    <p><b>서드파티 스크립트를 최소화</b>합니다. KidQuest 메인 앱은 Firebase와 Google 로그인 외의 외부 스크립트를 로드하지 않습니다. 광고 코드는 부모 대시보드에만 로드되며, 아이 화면에는 원천적으로 로드되지 않습니다.</p>
+
+    <blockquote>개인정보 보호는 개인정보처리방침 문서에 쓰는 것이 아니라, 데이터베이스 스키마에 쓰는 것입니다. 수집하지 않은 데이터는 유출될 수 없습니다.</blockquote>
+
+    <h2>아이에게는 더 엄격하게</h2>
+
+    <p>아이에 대해서는 한 단계 더 엄격한 기준을 적용합니다. Google Families Policy와 COPPA 등의 규제가 이미 존재하지만, 저희는 그 선을 최소 기준으로 두고 더 보수적으로 설계했습니다:</p>
+
+    <ul>
+      <li>아이에게는 별도 계정이 없습니다. 부모 계정에 종속된 프로필만 존재하며, 아이 본인의 로그인 자격 증명은 만들어지지 않습니다.</li>
+      <li>아이 화면에는 어떤 형태의 광고도 노출되지 않습니다. 행동 기반 광고는 물론, 비개인화 광고도 없습니다.</li>
+      <li>아이의 데이터는 부모가 계정을 해지하는 순간 즉시 함께 삭제됩니다. 보관 기간 0일입니다.</li>
+      <li>아이 화면에서 외부 링크로 이동하는 경로를 원천 차단했습니다.</li>
+    </ul>
+
+    <h2>왜 이렇게까지 하는가</h2>
+
+    <p>솔직히 말하면, 최소 수집은 비즈니스 관점에서 최적이 아닙니다. 데이터가 많을수록 제품 개선에 유용하고, 광고 타겟팅에 유리하며, 분석 대시보드가 풍성해집니다. 우리가 많은 가능성을 포기하고 있다는 점을 부정하지 않습니다.</p>
+
+    <p>그럼에도 이 원칙을 고수하는 이유는 두 가지입니다. 첫째, 이 제품의 사용자는 <b>아이와 부모</b>입니다. 그분들에게 데이터의 안전은 기능보다 앞선 약속이어야 한다고 생각합니다. 둘째, 저희 자신이 <b>사용자</b>입니다. 저의 아이도 KidQuest를 씁니다. 저 스스로 안심하고 아이에게 권할 수 없는 제품이라면, 다른 부모에게도 권할 수 없습니다.</p>
+
+    <p>개인정보 최소 수집은 거창한 이념이 아니라 실용적인 원칙입니다. 수집하지 않으면 유출할 수 없고, 삭제할 필요가 없고, 감사할 이유가 없습니다. 가장 튼튼한 보안은 처음부터 데이터가 존재하지 않는 것입니다.</p>
+
+  </article>
+
+  <div class="mt-16 pt-10 border-t border-slate-200">
+    <p class="text-xs font-black tracking-widest uppercase text-slate-400">다음 글</p>
+    <a href="/blog/habits-research.html" class="mt-2 block text-xl font-black text-slate-900 hover:text-blue-700">아이의 습관 형성에 대해 배운 것들 →</a>
+  </div>
+</main>
+
+<footer class="bg-slate-950 text-slate-400 text-sm mt-20">
+  <div class="max-w-6xl mx-auto px-5 py-14 grid md:grid-cols-4 gap-10">
+    <div class="md:col-span-2">
+      <div class="flex items-center gap-2 font-black text-lg text-white">
+        <span class="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-500 to-slate-800 flex items-center justify-center text-white text-xs">P</span>
+        Pyxora
+      </div>
+      <p class="mt-4 text-slate-400 leading-relaxed max-w-sm">가족과 아이를 위한 따뜻한 소프트웨어를 만드는 1인 인디 스튜디오.</p>
+      <p class="mt-4 text-slate-500 text-xs">문의: <a href="mailto:hello@pyxora.app" class="text-slate-300 hover:text-white">hello@pyxora.app</a></p>
+    </div>
+    <div>
+      <h4 class="text-white font-black mb-3">둘러보기</h4>
+      <ul class="space-y-2">
+        <li><a href="/about.html" class="hover:text-white">소개</a></li>
+        <li><a href="/products/" class="hover:text-white">제품</a></li>
+        <li><a href="/blog/" class="hover:text-white">블로그</a></li>
+        <li><a href="/contact.html" class="hover:text-white">문의</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="text-white font-black mb-3">법적 고지</h4>
+      <ul class="space-y-2">
+        <li><a href="/privacy.html" class="hover:text-white">개인정보처리방침</a></li>
+        <li><a href="/terms.html" class="hover:text-white">이용약관</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-slate-800">
+    <div class="max-w-6xl mx-auto px-5 py-6 text-xs text-slate-500">© 2026 Pyxora. All rights reserved.</div>
+  </div>
+</footer>
+
+</body>
+</html>

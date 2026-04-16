@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Home, Plus, Users, ChevronLeft } from 'lucide-react';
 import { motion } from 'motion/react';
-import { SOUNDS, playSound } from '../../lib/sound';
+import { tap, nav } from '../../lib/sound';
 
 interface FamilySetupProps {
   onCreate: (name: string) => void;
@@ -34,7 +34,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
             <div className="grid gap-4">
               <button
                 onClick={() => {
-                  playSound(SOUNDS.CLICK);
+                  tap();
                   setMode('create');
                 }}
                 className="w-full bg-blue-600 text-white font-black py-5 rounded-2xl shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
@@ -44,7 +44,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
               </button>
               <button
                 onClick={() => {
-                  playSound(SOUNDS.CLICK);
+                  tap();
                   setMode('join');
                 }}
                 className="w-full bg-white border-2 border-slate-100 text-slate-700 font-black py-5 rounded-2xl hover:bg-slate-50 transition-all active:scale-[0.98] flex items-center justify-center gap-3"
@@ -55,7 +55,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
             </div>
             <button
               onClick={() => {
-                playSound(SOUNDS.CLICK);
+                tap();
                 onLogout();
               }}
               className="text-slate-400 text-sm font-bold hover:text-slate-600 transition-colors"
@@ -70,7 +70,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
             <div className="text-left">
               <button
                 onClick={() => {
-                  playSound(SOUNDS.CLICK);
+                  nav();
                   setMode('initial');
                 }}
                 className="text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1 font-bold text-sm"
@@ -89,7 +89,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
             />
             <button
               onClick={() => {
-                playSound(SOUNDS.CLICK);
+                tap();
                 onCreate(familyName);
               }}
               disabled={!familyName.trim()}
@@ -105,7 +105,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
             <div className="text-left">
               <button
                 onClick={() => {
-                  playSound(SOUNDS.CLICK);
+                  nav();
                   setMode('initial');
                 }}
                 className="text-slate-400 hover:text-slate-600 mb-4 flex items-center gap-1 font-bold text-sm"
@@ -136,7 +136,7 @@ export function FamilySetup({ onCreate, onJoin, onLogout }: FamilySetupProps) {
             />
             <button
               onClick={() => {
-                playSound(SOUNDS.CLICK);
+                tap();
                 onJoin(inviteCode);
               }}
               disabled={inviteCode.length !== 6}

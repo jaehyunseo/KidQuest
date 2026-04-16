@@ -30,6 +30,19 @@ export interface QuestGroup {
   createdAt: string;
 }
 
+// Pro tier — drives feature gating, content unlocks, and upsell.
+// `free`      = default
+// `trial`     = time-bounded free trial (first install)
+// `pro_monthly`/`pro_yearly`/`pro_lifetime` = paid tiers
+// `promo`     = manually granted via promo code
+export type ProTier =
+  | 'free'
+  | 'trial'
+  | 'pro_monthly'
+  | 'pro_yearly'
+  | 'pro_lifetime'
+  | 'promo';
+
 export interface UserAccount {
   uid: string;
   email: string;
@@ -42,6 +55,28 @@ export interface UserAccount {
   consentTerms?: boolean;
   consentAge?: boolean;
   consentMarketing?: boolean;
+  // --------------------------------------------------------------
+  // Pro / billing
+  // --------------------------------------------------------------
+  // Current tier. Absent/undefined is treated as 'free'.
+  proTier?: ProTier;
+  // Expiry for time-bounded tiers (monthly/yearly/trial). Absent
+  // for lifetime/free/promo (with optional `proPromoExpiresAt`
+  // for manually issued promos). Stored as ISO string.
+  proExpiresAt?: string;
+  // For audit: when the tier was first granted and by whom.
+  proGrantedAt?: string;
+  proGrantedVia?: 'google_play' | 'app_store' | 'promo_code' | 'admin';
+  // Legal guardian acknowledgement — PIPA 제22조의2 requires consent
+  // for under-14 children's data. PIPA 제3조 (data minimization)
+  // tells us to record only what's necessary. We store the explicit
+  // acknowledgement, the consent version it applied to, and the
+  // timestamp — nothing more.
+  guardianConsent?: {
+    version: number;
+    consentedAt: string;    // ISO
+    acknowledged: boolean;
+  };
 }
 
 export interface Family {

@@ -11,8 +11,8 @@ interface RewardShopProps {
 
 export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6 lg:h-full lg:flex lg:flex-col lg:min-h-0 lg:space-y-4">
+      <div className="flex justify-between items-center lg:shrink-0">
         <div>
           <h2 className="font-black text-2xl text-slate-800">미션 보상</h2>
           <p className="text-xs font-bold text-slate-400 mt-0.5">
@@ -25,6 +25,7 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
         </div>
       </div>
 
+      <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto scrollbar-hide lg:pr-1 space-y-6 lg:space-y-4">
       {rewards.length === 0 && (
         <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-10 text-center space-y-3">
           <div className="text-5xl">🎁</div>
@@ -96,6 +97,7 @@ export function RewardShop({ rewards, profile, onPurchase }: RewardShopProps) {
             </motion.div>
           );
         })}
+      </div>
       </div>
     </div>
   );
